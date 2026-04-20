@@ -17,6 +17,7 @@
     "expo-crypto": "~55.0.14",
     "expo-font": "~55.0.6",
     "expo-linking": "~55.0.13",
+    "expo-modules-core": "^55.0.22",
     "expo-notifications": "~55.0.19",
     "expo-router": "~55.0.12",
     "expo-splash-screen": "~55.0.18",
@@ -34,13 +35,22 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@types/react": "~19.1.0",
-    "jest-expo": "~54.0.17",
-    "react-test-renderer": "19.1.0",
+    "@types/react": "~19.2.10",
+    "jest": "^30.3.0",
+    "jest-expo": "~55.0.16",
+    "react-test-renderer": "^19.2.0",
     "typescript": "~5.9.2"
   },
   "private": true,
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^expo/src/winter$": "<rootDir>/__mocks__/expo-winter.js",
+      "^expo/src/winter/(.*)$": "<rootDir>/__mocks__/expo-winter.js"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|zustand)"
+    ]
   }
 }
