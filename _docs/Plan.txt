@@ -1,0 +1,230 @@
+# 📱 Student OS App — Product Requirements Document (PRD)
+
+## 1. 🧭 Overview
+
+**Product Name (Working):** Student OS  
+**Platform:** Mobile App (iOS + Android)  
+**Primary Users:** College students (initially NIT Calicut)
+
+### 🎯 Vision
+Create a **daily decision engine for students** that integrates academic tracking, campus activity, and utilities into one unified app.
+
+### 💡 Core Value Proposition
+> “One app to decide your day — classes, attendance, food, and what’s happening.”
+
+---
+
+## 2. 🚨 Problem Statement
+
+Students currently:
+- Manually track attendance (or ignore it until it’s too late)
+- Miss campus events due to lack of visibility
+- Have no centralized access to notes/resources
+- Don’t know if attending class is *actually necessary*
+- Lack real-time, relevant campus updates
+
+---
+
+## 3. 🎯 Goals & Success Metrics
+
+### Primary Goals
+- High daily engagement
+- Become a **habit app** (5–10 opens/day)
+
+### KPIs
+- DAU / MAU ratio > 40%
+- Avg session time > 3 mins
+- Retention (Day 7) > 35%
+- Attendance feature usage > 70% of users
+
+---
+
+## 4. 🧱 Core Features
+
+---
+
+## 4.1 🎓 Attendance + Prediction Engine (CORE)
+
+### Description
+Track and predict attendance with actionable insights.
+
+### Features
+- Add subjects with total classes conducted
+- Mark attendance (Present/Absent)
+- Auto-calculate percentage
+- Predict:
+  - Minimum required attendance
+  - Safe skips remaining
+
+### Logic
+- Threshold default: 75%
+- Predict future attendance based on:
+  - current %
+  - scheduled classes (from timetable)
+
+### Key Actions
+- “Can I skip today?”
+- “How many classes can I miss?”
+
+---
+
+## 4.2 🗓️ Smart Timetable System
+
+### Description
+User-defined timetable that powers the entire app.
+
+### Features
+- Add subjects + time slots
+- Weekly schedule view
+- Edit/delete slots
+
+### Smart Layer
+- Detect:
+  - free gaps
+  - overloaded days
+- Suggest:
+  - optimal study slots
+  - break times
+
+### Dependencies
+- Feeds into:
+  - attendance prediction
+  - daily dashboard
+  - event relevance
+
+---
+
+## 4.3 ⚡ “Right Now” Feed
+
+### Description
+Real-time campus activity feed.
+
+### Features
+- Post updates:
+  - events
+  - announcements
+  - free food
+- Time-limited visibility (expiry)
+
+### Post Attributes
+- Title
+- Description
+- Timestamp
+- Optional location
+
+### Ranking
+- Recency-based
+- Boost posts during user free time
+
+---
+
+## 4.4 🧠 Anonymous Wall
+
+### Description
+Infinite shared canvas for anonymous interaction.
+
+### Features
+- Draw / write anywhere
+- Real-time updates
+- Overwrite existing content
+
+### Constraints
+- Region-based rendering (performance)
+- Content decay over time
+- No identity tracking
+
+### Purpose
+- Drive engagement
+- Enable viral usage
+
+---
+
+## 4.5 📚 Notes & Resources Hub
+
+### Description
+Central repository for academic materials.
+
+### Features
+- Upload notes (PDF/images)
+- Browse by:
+  - subject
+  - semester
+- Download content
+
+### Ranking System
+- Most downloaded
+- Recently trending (pre-exam boost)
+
+---
+
+## 4.6 🍽️ Mess Menu System
+
+### Description
+Structured display of daily mess menus.
+
+### Model
+- Admin uploads predefined rotating menus
+- Each mess follows a different “day cycle”
+
+### Example
+- Mess A → Day 1 menu
+- Mess B → Day 3 menu (same calendar day)
+
+### Features
+- User selects registered mess
+- App displays:
+  - today’s menu
+  - meal breakdown
+
+Optional:
+- Simple rating (👍 / 👎)
+
+---
+
+## 5. 🏠 Home Screen (Critical UX)
+
+### Purpose
+Single glance → full daily context
+
+### Components
+- Next class
+- Attendance status (risk indicator)
+- Today’s mess menu
+- Live feed highlights
+- Quick access:
+  - mark attendance
+  - open wall
+
+---
+
+## 6. 🔗 Feature Interactions
+
+### Decision Engine (Core Concept)
+
+#### Example 1
+- Attendance: 68%
+- Safe skips: 2
+- Event live now
+
+→ Suggest: “You can skip this class safely”
+
+---
+
+#### Example 2
+- 2-hour free slot detected
+- Notes trending for next class
+
+→ Suggest: “Good time to study”
+
+---
+
+## 7. 🧑‍💻 User Flow
+
+### Onboarding
+```md id="flow1"
+1. Open app
+2. (Optional) login/signup
+3. Add subjects
+4. Create timetable
+5. Select mess
+6. Land on dashboard
