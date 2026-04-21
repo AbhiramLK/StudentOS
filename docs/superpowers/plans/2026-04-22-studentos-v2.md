@@ -1351,3 +1351,638 @@ Expected: 0 errors.
 git add src/db/subjects.ts src/db/timetable.ts app/onboarding/
 git commit -m "feat: onboarding flow — subjects, timetable, mess selection, done"
 ```
+
+---
+
+### Task 6: Remaining DB helpers
+
+**Files:**
+- Create: `src/db/attendance.ts`
+- Create: `src/db/calendar.ts`
+- Create: `src/db/feed.ts`
+- Create: `src/db/wall.ts`
+- Create: `src/db/notes.ts`
+- Create: `src/db/mess.ts`
+- Create: `src/db/gym.ts`
+- Create: `src/db/messages.ts`
+
+- [ ] **Step 1: Create `src/db/attendance.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { AttendanceRecord, AttendanceStatus } from '../types';
+
+export async function getAttendanceRecords(userId: string, subjectId: string): Promise<AttendanceRecord[]> {
+  const { data, error } = await supabase
+    .from('attendance_records')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('subject_id', subjectId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data as AttendanceRecord[];
+}
+
+export async function getAllAttendanceRecords(userId: string): Promise<AttendanceRecord[]> {
+  const { data, error } = await supabase
+    .from('attendance_records')
+    .select('*')
+    .eq('user_id', userId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data as AttendanceRecord[];
+}
+
+export async function upsertAttendance(
+  userId: string,
+  subjectId: string,
+  date: string,
+  status: AttendanceStatus,
+): Promise<void> {
+  const { error } = await supabase.from('attendance_records').upsert(
+    { user_id: userId, subject_id: subjectId, date, status },
+    { onConflict: 'user_id,subject_id,date' },
+  );
+  if (error) throw error;
+}
+```
+
+- [ ] **Step 2: Create `src/db/calendar.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { AcademicCalendarEntry } from '../types';
+
+export async function getCalendarEntries(): Promise<AcademicCalendarEntry[]> {
+  const { data, error } = await supabase
+    .from('academic_calendar')
+    .select('*')
+    .order('date', { ascending: true });
+  if (error) throw error;
+  return data as AcademicCalendarEntry[];
+}
+
+export async function getCalendarEntryForDate(date: string): Promise<AcademicCalendarEntry | null> {
+  const { data, error } = await supabase
+    .from('academic_calendar')
+    .select('*')
+    .eq('date', date)
+    .maybeSingle();
+  if (error) throw error;
+  return data as AcademicCalendarEntry | null;
+}
+```
+
+- [ ] **Step 3: Create `src/db/feed.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { FeedPost } from '../types';
+
+export async function getFeedPosts(): Promise<FeedPost[]> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('feed_posts')
+    .select('*, profiles(name)')
+    .gt('expires_at', now)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as FeedPost[];
+}
+
+export async function createFeedPost(
+  userId: string,
+  title: string,
+  body: string,
+  location: string | null,
+  expiresAt: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('feed_posts')
+    .insert({ user_id: userId, title, body, location, expires_at: expiresAt });
+  if (error) throw error;
+}
+```
+
+- [ ] **Step 4: Create `src/db/wall.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { WallEntry } from '../types';
+
+export async function getWallEntries(): Promise<WallEntry[]> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('wall_entries')
+    .select('*')
+    .gt('expires_at', now)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as WallEntry[];
+}
+
+export async function createWallEntry(content: string, color: string): Promise<void> {
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from('wall_entries')
+    .insert({ content, color, expires_at: expiresAt });
+  if (error) throw error;
+}
+```
+
+- [ ] **Step 5: Create `src/db/notes.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { Note } from '../types';
+
+export async function getNotesBySubject(subjectName: string): Promise<Note[]> {
+  const { data, error } = await supabase
+    .from('notes')
+    .select('*')
+    .eq('subject_name', subjectName)
+    .order('download_count', { ascending: false });
+  if (error) throw error;
+  return data as Note[];
+}
+
+export async function getNotesBySemester(semester: string): Promise<Note[]> {
+  const { data, error } = await supabase
+    .from('notes')
+    .select('*')
+    .eq('semester', semester)
+    .order('download_count', { ascending: false });
+  if (error) throw error;
+  return data as Note[];
+}
+
+export async function uploadNote(
+  userId: string,
+  subjectName: string,
+  semester: string,
+  title: string,
+  filePath: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('notes')
+    .insert({ user_id: userId, subject_name: subjectName, semester, title, file_path: filePath, download_count: 0 });
+  if (error) throw error;
+}
+
+export async function incrementDownloadCount(noteId: string): Promise<void> {
+  const { error } = await supabase.rpc('increment_download_count', { note_id: noteId });
+  if (error) throw error;
+}
+
+export async function getSignedUrl(filePath: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from('notes')
+    .createSignedUrl(filePath, 60);
+  if (error) throw error;
+  return data.signedUrl;
+}
+```
+
+- [ ] **Step 6: Create `src/db/mess.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { Mess, MessMenu } from '../types';
+
+export async function getMesses(): Promise<Mess[]> {
+  const { data, error } = await supabase.from('messes').select('*').order('name');
+  if (error) throw error;
+  return data as Mess[];
+}
+
+export async function getMessMenuForDay(messId: string, dayCycle: number): Promise<MessMenu[]> {
+  const { data, error } = await supabase
+    .from('mess_menus')
+    .select('*')
+    .eq('mess_id', messId)
+    .eq('day_cycle', dayCycle)
+    .order('meal');
+  if (error) throw error;
+  return data as MessMenu[];
+}
+
+export function computeDayCycle(cycleStartDate: string, cycleLength: number): number {
+  const start = new Date(cycleStartDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  start.setHours(0, 0, 0, 0);
+  const diffDays = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  return (diffDays % cycleLength) + 1;
+}
+```
+
+- [ ] **Step 7: Create `src/db/gym.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { GymSession } from '../types';
+
+export async function getGymSessions(userId: string, weekStart: string, weekEnd: string): Promise<GymSession[]> {
+  const { data, error } = await supabase
+    .from('gym_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('date', weekStart)
+    .lte('date', weekEnd)
+    .order('date', { ascending: true });
+  if (error) throw error;
+  return data as GymSession[];
+}
+
+export async function logGymSession(
+  userId: string,
+  date: string,
+  startTime: string,
+  durationMin: number,
+  notes: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('gym_sessions')
+    .insert({ user_id: userId, date, start_time: startTime, duration_min: durationMin, notes });
+  if (error) throw error;
+}
+```
+
+- [ ] **Step 8: Create `src/db/messages.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { Conversation, Message } from '../types';
+
+export async function getConversations(userId: string): Promise<Conversation[]> {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*, user_a_profile:profiles!user_a(id,name), user_b_profile:profiles!user_b(id,name), last_message:messages!last_message_id(content,created_at)')
+    .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return data as Conversation[];
+}
+
+export async function getMessages(conversationId: string): Promise<Message[]> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .or(`sender_id.eq.${conversationId},receiver_id.eq.${conversationId}`)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data as Message[];
+}
+
+export async function getMessagesByConversation(userId: string, otherUserId: string): Promise<Message[]> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .or(
+      `and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`,
+    )
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data as Message[];
+}
+
+export async function sendMessage(senderId: string, receiverId: string, content: string): Promise<Message> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({ sender_id: senderId, receiver_id: receiverId, content })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Message;
+}
+
+export async function markMessagesRead(senderId: string, receiverId: string): Promise<void> {
+  const { error } = await supabase
+    .from('messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('sender_id', senderId)
+    .eq('receiver_id', receiverId)
+    .is('read_at', null);
+  if (error) throw error;
+}
+
+export async function searchProfiles(query: string): Promise<{ id: string; name: string; roll_number: string }[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, roll_number')
+    .ilike('name', `%${query}%`)
+    .limit(10);
+  if (error) throw error;
+  return data as { id: string; name: string; roll_number: string }[];
+}
+
+export async function getOrCreateConversation(userA: string, userB: string): Promise<string> {
+  const { data: existing, error: fetchError } = await supabase
+    .from('conversations')
+    .select('id')
+    .or(
+      `and(user_a.eq.${userA},user_b.eq.${userB}),and(user_a.eq.${userB},user_b.eq.${userA})`,
+    )
+    .maybeSingle();
+  if (fetchError) throw fetchError;
+  if (existing) return existing.id;
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .insert({ user_a: userA, user_b: userB })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+```
+
+- [ ] **Step 9: TypeScript check**
+
+```bash
+npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add src/db/attendance.ts src/db/calendar.ts src/db/feed.ts src/db/wall.ts src/db/notes.ts src/db/mess.ts src/db/gym.ts src/db/messages.ts
+git commit -m "feat: all DB query helpers"
+```
+
+---
+
+### Task 7: Prediction Engine (TDD)
+
+**Files:**
+- Create: `src/engine/predictionEngine.test.ts`
+- Create: `src/engine/predictionEngine.ts`
+
+The prediction engine determines whether a student is safe to skip a class without dropping below their target attendance percentage. It also projects the minimum classes they must attend to recover if already below target.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `src/engine/predictionEngine.test.ts`:
+
+```typescript
+import {
+  computeAttendancePct,
+  canSkip,
+  classesToRecover,
+  verdictForSubject,
+} from './predictionEngine';
+
+const BASE = { present: 80, total: 100, target: 75 };
+
+describe('computeAttendancePct', () => {
+  it('returns 0 when total is 0', () => {
+    expect(computeAttendancePct(0, 0)).toBe(0);
+  });
+  it('rounds to 1 decimal place', () => {
+    expect(computeAttendancePct(2, 3)).toBe(66.7);
+  });
+  it('returns 100 when all present', () => {
+    expect(computeAttendancePct(10, 10)).toBe(100);
+  });
+});
+
+describe('canSkip', () => {
+  it('returns true when skipping keeps pct at or above target', () => {
+    // 80/100 = 80%, target 75%. Skipping: 80/101 = 79.2% — still safe
+    expect(canSkip(80, 100, 75)).toBe(true);
+  });
+  it('returns false when skipping drops below target', () => {
+    // 75/100 = 75%, target 75%. Skipping: 75/101 = 74.3% — not safe
+    expect(canSkip(75, 100, 75)).toBe(false);
+  });
+  it('returns false when already below target', () => {
+    expect(canSkip(70, 100, 75)).toBe(false);
+  });
+});
+
+describe('classesToRecover', () => {
+  it('returns 0 when already at or above target', () => {
+    expect(classesToRecover(80, 100, 75)).toBe(0);
+  });
+  it('returns correct number of consecutive classes needed', () => {
+    // 70/100 = 70%, target 75%. Need to attend N in a row:
+    // (70+N)/(100+N) >= 0.75 → N >= 20
+    expect(classesToRecover(70, 100, 75)).toBe(20);
+  });
+  it('caps at 100 to prevent infinite loops', () => {
+    expect(classesToRecover(0, 0, 75)).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('verdictForSubject', () => {
+  it('returns safe when well above target', () => {
+    expect(verdictForSubject(85, 100, 75)).toBe('safe');
+  });
+  it('returns warning when within 5% of threshold', () => {
+    // 76/100 = 76%, target 75% — can skip once but barely
+    expect(verdictForSubject(76, 100, 75)).toBe('warning');
+  });
+  it('returns danger when below target', () => {
+    expect(verdictForSubject(70, 100, 75)).toBe('danger');
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+npx jest src/engine/predictionEngine.test.ts --no-coverage 2>&1 | tail -20
+```
+
+Expected: FAIL — "Cannot find module './predictionEngine'"
+
+- [ ] **Step 3: Implement the prediction engine**
+
+Create `src/engine/predictionEngine.ts`:
+
+```typescript
+export type Verdict = 'safe' | 'warning' | 'danger';
+
+export function computeAttendancePct(present: number, total: number): number {
+  if (total === 0) return 0;
+  return Math.round((present / total) * 1000) / 10;
+}
+
+export function canSkip(present: number, total: number, targetPct: number): boolean {
+  const afterSkip = present / (total + 1);
+  return afterSkip * 100 >= targetPct;
+}
+
+export function classesToRecover(present: number, total: number, targetPct: number): number {
+  const target = targetPct / 100;
+  if (present / Math.max(total, 1) >= target) return 0;
+  let n = 0;
+  while (n < 100) {
+    n++;
+    if ((present + n) / (total + n) >= target) return n;
+  }
+  return n;
+}
+
+export function verdictForSubject(present: number, total: number, targetPct: number): Verdict {
+  const pct = computeAttendancePct(present, total);
+  if (pct < targetPct) return 'danger';
+  // Warning: currently safe but skipping once would drop below
+  if (!canSkip(present, total, targetPct)) return 'warning';
+  // Warning: within 5 percentage points of threshold
+  if (pct < targetPct + 5) return 'warning';
+  return 'safe';
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+npx jest src/engine/predictionEngine.test.ts --no-coverage 2>&1 | tail -20
+```
+
+Expected: PASS — 10 tests passed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/engine/predictionEngine.ts src/engine/predictionEngine.test.ts
+git commit -m "feat: prediction engine with TDD — canSkip, classesToRecover, verdict"
+```
+
+---
+
+### Task 8: Zustand Stores
+
+**Files:**
+- Create: `src/stores/subjectsStore.ts`
+- Create: `src/stores/timetableStore.ts`
+
+These stores cache Supabase data in memory so screens don't re-fetch on every render. `authStore` already exists (Task 4).
+
+- [ ] **Step 1: Create `src/stores/subjectsStore.ts`**
+
+```typescript
+import { create } from 'zustand';
+import type { Subject, AttendanceRecord } from '../types';
+import { getSubjects } from '../db/subjects';
+import { getAllAttendanceRecords } from '../db/attendance';
+
+interface SubjectsState {
+  subjects: Subject[];
+  records: AttendanceRecord[];
+  loading: boolean;
+  fetch: (userId: string) => Promise<void>;
+  reset: () => void;
+}
+
+export const useSubjectsStore = create<SubjectsState>((set) => ({
+  subjects: [],
+  records: [],
+  loading: false,
+  fetch: async (userId) => {
+    set({ loading: true });
+    const [subjects, records] = await Promise.all([
+      getSubjects(userId),
+      getAllAttendanceRecords(userId),
+    ]);
+    set({ subjects, records, loading: false });
+  },
+  reset: () => set({ subjects: [], records: [], loading: false }),
+}));
+```
+
+- [ ] **Step 2: Create `src/stores/timetableStore.ts`**
+
+```typescript
+import { create } from 'zustand';
+import type { TimetableSlot, UserTimetableEntry, AcademicCalendarEntry } from '../types';
+import { getTimetableSlots } from '../db/timetable';
+import { getCalendarEntries } from '../db/calendar';
+
+interface TimetableState {
+  slots: TimetableSlot[];
+  userEntries: UserTimetableEntry[];
+  calendarEntries: AcademicCalendarEntry[];
+  loading: boolean;
+  fetch: (userId: string) => Promise<void>;
+  reset: () => void;
+}
+
+export const useTimetableStore = create<TimetableState>((set) => ({
+  slots: [],
+  userEntries: [],
+  calendarEntries: [],
+  loading: false,
+  fetch: async (userId) => {
+    set({ loading: true });
+    const [slots, userEntries, calendarEntries] = await Promise.all([
+      getTimetableSlots(),
+      getUserTimetable(userId),
+      getCalendarEntries(),
+    ]);
+    set({ slots, userEntries, calendarEntries, loading: false });
+  },
+  reset: () => set({ slots: [], userEntries: [], calendarEntries: [], loading: false }),
+}));
+```
+
+- [ ] **Step 3: Add `getUserTimetable` import in timetableStore**
+
+The function `getUserTimetable` must be imported from `src/db/timetable.ts`. Confirm that file exports it (it was written in Task 5). Update the import at the top of `src/stores/timetableStore.ts`:
+
+```typescript
+import { getTimetableSlots, getUserTimetable } from '../db/timetable';
+```
+
+Full file after the fix:
+
+```typescript
+import { create } from 'zustand';
+import type { TimetableSlot, UserTimetableEntry, AcademicCalendarEntry } from '../types';
+import { getTimetableSlots, getUserTimetable } from '../db/timetable';
+import { getCalendarEntries } from '../db/calendar';
+
+interface TimetableState {
+  slots: TimetableSlot[];
+  userEntries: UserTimetableEntry[];
+  calendarEntries: AcademicCalendarEntry[];
+  loading: boolean;
+  fetch: (userId: string) => Promise<void>;
+  reset: () => void;
+}
+
+export const useTimetableStore = create<TimetableState>((set) => ({
+  slots: [],
+  userEntries: [],
+  calendarEntries: [],
+  loading: false,
+  fetch: async (userId) => {
+    set({ loading: true });
+    const [slots, userEntries, calendarEntries] = await Promise.all([
+      getTimetableSlots(),
+      getUserTimetable(userId),
+      getCalendarEntries(),
+    ]);
+    set({ slots, userEntries, calendarEntries, loading: false });
+  },
+  reset: () => set({ slots: [], userEntries: [], calendarEntries: [], loading: false }),
+}));
+```
+
+- [ ] **Step 4: TypeScript check**
+
+```bash
+npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/stores/subjectsStore.ts src/stores/timetableStore.ts
+git commit -m "feat: subjectsStore and timetableStore with Zustand"
+```
