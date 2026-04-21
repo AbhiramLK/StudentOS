@@ -2405,3 +2405,4114 @@ Expected: 0 errors.
 git add src/components/
 git commit -m "feat: shared UI components — VerdictChip, AttendanceBar, ClassCard, FeedCard, WallCard, NoteCard, MealRow, GymSessionCard, SuggestionCard, MessageBubble"
 ```
+
+---
+
+### Task 10: Fix timetable import + Tab Layout + Home Screen + All Screen
+
+**Files:**
+- Modify: `src/db/timetable.ts` — rename `getAllSlots` → `getTimetableSlots`
+- Create: `app/(tabs)/_layout.tsx`
+- Create: `app/(tabs)/index.tsx`
+- Create: `app/(tabs)/all.tsx`
+
+> **Note:** Task 8's `timetableStore.ts` imports `getTimetableSlots` but Task 5 exported it as `getAllSlots`. This step fixes that mismatch before any screen is wired up.
+
+- [ ] **Step 1: Rename `getAllSlots` to `getTimetableSlots` in `src/db/timetable.ts`**
+
+Open `src/db/timetable.ts` and rename the function definition from `getAllSlots` to `getTimetableSlots`. Every other function in that file stays unchanged.
+
+Full updated file:
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { TimetableSlot, UserTimetableEntry } from '../types';
+
+export async function getTimetableSlots(): Promise<TimetableSlot[]> {
+  const { data } = await supabase
+    .from('timetable_slots').select('*')
+    .order('day_of_week').order('slot_number');
+  return data ?? [];
+}
+
+export async function getUserTimetable(userId: string): Promise<UserTimetableEntry[]> {
+  const { data } = await supabase
+    .from('user_timetable')
+    .select('*, slot:timetable_slots(*)')
+    .eq('user_id', userId);
+  return data ?? [];
+}
+
+export async function upsertUserTimetableEntry(
+  userId: string, slotId: string, subjectName: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('user_timetable')
+    .upsert(
+      { user_id: userId, slot_id: slotId, subject_name: subjectName },
+      { onConflict: 'user_id,slot_id' }
+    );
+  if (error) throw error;
+}
+
+export async function deleteUserTimetableEntry(
+  userId: string, slotId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('user_timetable')
+    .delete().eq('user_id', userId).eq('slot_id', slotId);
+  if (error) throw error;
+}
+
+export async function getSlotsForEffectiveDay(
+  userId: string, dayOfWeek: number
+): Promise<UserTimetableEntry[]> {
+  const { data } = await supabase
+    .from('user_timetable')
+    .select('*, slot:timetable_slots(*)')
+    .eq('user_id', userId)
+    .eq('slot.day_of_week', dayOfWeek);
+  return (data ?? []).filter((e) => e.slot !== null);
+}
+```
+
+- [ ] **Step 2: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -10
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 3: Create `app/(tabs)/_layout.tsx`**
+
+```typescript
+import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+
+const C = { bg: '#0b0c10', accent: '#66fcf1', muted: '#8a8f98' };
+
+export default function TabLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { backgroundColor: C.bg, borderTopColor: '#1a1b20', height: 56 },
+        tabBarActiveTintColor: C.accent,
+        tabBarInactiveTintColor: C.muted,
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '500' },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="all"
+        options={{
+          title: 'All',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="grid-outline" size={size} color={color} />
+          ),
+        }}
+      />
+    </Tabs>
+  );
+}
+```
+
+- [ ] **Step 4: Create `app/(tabs)/all.tsx`**
+
+```typescript
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+
+const C = { bg: '#0b0c10', text: '#eaeaea', muted: '#8a8f98' };
+
+const FEATURES = [
+  { icon: '📅', label: 'Timetable', route: '/timetable' },
+  { icon: '⚡', label: 'Feed',      route: '/feed' },
+  { icon: '✔️', label: 'Attendance', route: '/attendance' },
+  { icon: '📝', label: 'Notes',     route: '/notes' },
+  { icon: '🍽️', label: 'Mess',      route: '/mess' },
+  { icon: '🏋️', label: 'Gym',       route: '/gym' },
+  { icon: '🧱', label: 'Wall',      route: '/wall' },
+  { icon: '🤖', label: 'AI',        route: '/ai' },
+  { icon: '💬', label: 'Messages',  route: '/messages' },
+] as const;
+
+export default function AllScreen() {
+  return (
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Text style={styles.title}>All Features</Text>
+        <View style={styles.grid}>
+          {FEATURES.map(f => (
+            <TouchableOpacity
+              key={f.label}
+              style={styles.cell}
+              onPress={() => router.push(f.route as any)}
+              accessibilityLabel={f.label}
+              accessibilityRole="button"
+            >
+              <Text style={styles.icon} accessibilityElementsHidden>{f.icon}</Text>
+              <Text style={styles.label}>{f.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  scroll: { padding: 20, paddingBottom: 80 },
+  title: { fontSize: 22, fontWeight: '600', color: C.text, marginBottom: 32 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 28 },
+  cell: { width: '28%', alignItems: 'center', gap: 8 },
+  icon: { fontSize: 28 },
+  label: { fontSize: 13, color: C.muted },
+});
+```
+
+- [ ] **Step 5: Create `app/(tabs)/index.tsx`**
+
+```typescript
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { useSubjectsStore } from '../../src/stores/subjectsStore';
+import { useTimetableStore } from '../../src/stores/timetableStore';
+import { computeAttendancePct } from '../../src/engine/predictionEngine';
+import { getMessMenuForDay, computeDayCycle } from '../../src/db/mess';
+import { supabase } from '../../src/lib/supabase';
+import MealRow from '../../src/components/MealRow';
+import type { MessMenu } from '../../src/types';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98', danger: '#ff5c5c', warning: '#ffc857',
+};
+
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good Morning,';
+  if (h < 17) return 'Good Afternoon,';
+  return 'Good Evening,';
+}
+
+export default function HomeScreen() {
+  const { profile } = useAuthStore();
+  const { subjects, records, fetch: fetchSubjects } = useSubjectsStore();
+  const { userEntries, calendarEntries, fetch: fetchTimetable } = useTimetableStore();
+  const [messMenus, setMessMenus] = useState<MessMenu[]>([]);
+
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const todayDow = (today.getDay() + 6) % 7; // 0=Mon
+
+  const calendarEntry = useMemo(
+    () => calendarEntries.find(e => e.date === todayStr) ?? null,
+    [calendarEntries, todayStr],
+  );
+
+  const isHoliday = calendarEntry?.type === 'holiday';
+  const effectiveDow =
+    calendarEntry?.type === 'day_change'
+      ? (calendarEntry.substitute_day ?? todayDow)
+      : todayDow;
+
+  useFocusEffect(
+    useCallback(() => {
+      if (profile) {
+        fetchSubjects(profile.id);
+        fetchTimetable(profile.id);
+      }
+    }, [profile?.id]),
+  );
+
+  useEffect(() => {
+    if (!profile?.mess_id) return;
+    supabase
+      .from('messes')
+      .select('*')
+      .eq('id', profile.mess_id)
+      .single()
+      .then(({ data: mess }) => {
+        if (!mess) return;
+        const dayCycle = computeDayCycle(
+          (mess as any).cycle_start_date,
+          (mess as any).cycle_length,
+        );
+        getMessMenuForDay(mess.id, dayCycle).then(setMessMenus);
+      });
+  }, [profile?.mess_id]);
+
+  const todayEntries = useMemo(
+    () =>
+      isHoliday
+        ? []
+        : userEntries
+            .filter(e => e.slot?.day_of_week === effectiveDow)
+            .sort((a, b) =>
+              (a.slot?.start_time ?? '').localeCompare(b.slot?.start_time ?? ''),
+            ),
+    [userEntries, effectiveDow, isHoliday],
+  );
+
+  const todayEvents = useMemo(
+    () => calendarEntries.filter(e => e.date === todayStr && e.type === 'event'),
+    [calendarEntries, todayStr],
+  );
+
+  const meals = useMemo(() => {
+    const order = ['breakfast', 'lunch', 'evening', 'dinner'] as const;
+    return order.map(meal => ({
+      meal,
+      items: messMenus.find(m => m.meal === meal)?.items ?? [],
+    }));
+  }, [messMenus]);
+
+  function getAttPct(subjectName: string): number {
+    const subject = subjects.find(s => s.name === subjectName);
+    if (!subject) return 0;
+    const sr = records.filter(r => r.subject_id === subject.id);
+    return computeAttendancePct(
+      sr.filter(r => r.status === 'present').length,
+      sr.length,
+    );
+  }
+
+  function pctColor(pct: number, target: number): string {
+    if (pct < target) return C.danger;
+    if (pct < target + 5) return C.warning;
+    return C.accent;
+  }
+
+  return (
+    <View style={s.container}>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        <View style={s.header}>
+          <View>
+            <Text style={s.greeting}>{getGreeting()}</Text>
+            <Text style={s.name}>{profile?.name ?? ''}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => router.push('/settings')}
+            accessibilityLabel="Settings"
+            style={s.iconBtn}
+          >
+            <Ionicons name="settings-outline" size={22} color={C.muted} />
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={s.updatesBtn}
+          onPress={() => router.push('/feed')}
+          accessibilityLabel="Open feed"
+        >
+          <Ionicons name="flash-outline" size={15} color={C.text} />
+          <Text style={s.updatesBtnText}>Stored Updates</Text>
+          <View style={s.dot} />
+        </TouchableOpacity>
+
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>
+            {isHoliday
+              ? `Today — ${calendarEntry?.description ?? 'Holiday'}`
+              : 'Today'}
+          </Text>
+          {isHoliday ? (
+            <Text style={s.emptyText}>No classes today</Text>
+          ) : todayEntries.length === 0 ? (
+            <Text style={s.emptyText}>No classes scheduled</Text>
+          ) : (
+            todayEntries.map(entry => {
+              const subject = subjects.find(sub => sub.name === entry.subject_name);
+              const pct = getAttPct(entry.subject_name);
+              const color = pctColor(pct, subject?.target_pct ?? 75);
+              return (
+                <View key={entry.id} style={s.classRow}>
+                  <Text style={s.classLabel}>
+                    {entry.slot?.start_time.slice(0, 5)} — {entry.subject_name}
+                  </Text>
+                  <Text style={[s.classPct, { color }]}>{pct}%</Text>
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        {todayEvents.length > 0 && (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Suggested</Text>
+            {todayEvents.map(ev => (
+              <Text key={ev.id} style={s.suggestedItem}>{ev.description}</Text>
+            ))}
+          </View>
+        )}
+
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Food Today</Text>
+          {meals.map(({ meal, items }) => (
+            <MealRow key={meal} meal={meal} items={items} />
+          ))}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  scroll: { padding: 20, paddingBottom: 80 },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'flex-start', marginBottom: 20,
+  },
+  greeting: { fontSize: 16, color: C.muted },
+  name: { fontSize: 22, fontWeight: '600', color: C.text },
+  iconBtn: { padding: 8 },
+  updatesBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: C.card, borderRadius: 999,
+    paddingVertical: 10, paddingHorizontal: 16,
+    marginBottom: 28, alignSelf: 'flex-start', position: 'relative',
+  },
+  updatesBtnText: { fontSize: 14, color: C.text },
+  dot: {
+    width: 8, height: 8, backgroundColor: C.accent,
+    borderRadius: 4, position: 'absolute', top: 6, right: 6,
+  },
+  section: { marginBottom: 28 },
+  sectionTitle: {
+    fontSize: 12, color: C.muted, marginBottom: 10,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  classRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  classLabel: { fontSize: 14, color: C.text },
+  classPct: { fontSize: 14, fontWeight: '700' },
+  emptyText: { fontSize: 14, color: C.muted },
+  suggestedItem: { fontSize: 14, color: C.text, marginBottom: 6 },
+});
+```
+
+- [ ] **Step 6: TypeScript check**
+
+```bash
+npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/db/timetable.ts app/\(tabs\)/
+git commit -m "feat: tab layout, home dashboard, all-features grid"
+```
+
+---
+
+### Task 11: Attendance Screen + Subject Detail
+
+**Files:**
+- Create: `app/attendance/index.tsx`
+- Create: `app/attendance/[subjectId].tsx`
+- Create: `app/attendance/_layout.tsx`
+
+- [ ] **Step 1: Create `app/attendance/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function AttendanceLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 2: Create `app/attendance/index.tsx`**
+
+```typescript
+import { useCallback, useMemo, useState } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity,
+  StyleSheet, ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { useSubjectsStore } from '../../src/stores/subjectsStore';
+import { upsertAttendance } from '../../src/db/attendance';
+import {
+  computeAttendancePct,
+  verdictForSubject,
+} from '../../src/engine/predictionEngine';
+import AttendanceBar from '../../src/components/AttendanceBar';
+import VerdictChip from '../../src/components/VerdictChip';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98', danger: '#ff5c5c',
+};
+
+export default function AttendanceScreen() {
+  const { profile } = useAuthStore();
+  const { subjects, records, loading, fetch } = useSubjectsStore();
+  const [marking, setMarking] = useState<string | null>(null);
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  useFocusEffect(
+    useCallback(() => {
+      if (profile) fetch(profile.id);
+    }, [profile?.id]),
+  );
+
+  const subjectStats = useMemo(() =>
+    subjects.map(subject => {
+      const sr = records.filter(r => r.subject_id === subject.id);
+      const present = sr.filter(r => r.status === 'present').length;
+      const total = sr.length;
+      const pct = computeAttendancePct(present, total);
+      const verdict = verdictForSubject(present, total, subject.target_pct);
+      const todayRecord = sr.find(r => r.date === todayStr);
+      return { subject, present, total, pct, verdict, todayStatus: todayRecord?.status ?? null };
+    }),
+    [subjects, records, todayStr],
+  );
+
+  async function mark(subjectId: string, status: 'present' | 'absent') {
+    if (!profile) return;
+    setMarking(subjectId + status);
+    await upsertAttendance(profile.id, subjectId, todayStr, status);
+    await fetch(profile.id);
+    setMarking(null);
+  }
+
+  if (loading && subjects.length === 0) {
+    return (
+      <View style={[s.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator color={C.accent} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <Text style={s.title}>Attendance</Text>
+      </View>
+      <FlatList
+        data={subjectStats}
+        keyExtractor={item => item.subject.id}
+        contentContainerStyle={s.list}
+        renderItem={({ item }) => (
+          <View style={s.card}>
+            <TouchableOpacity
+              style={s.cardTop}
+              onPress={() => router.push(`/attendance/${item.subject.id}`)}
+              accessibilityLabel={`${item.subject.name} detail`}
+            >
+              <View style={s.cardLeft}>
+                <Text style={s.subjectName}>{item.subject.name}</Text>
+                <Text style={s.subjectStats}>
+                  {item.present}/{item.total} classes
+                </Text>
+              </View>
+              <VerdictChip verdict={item.verdict} />
+            </TouchableOpacity>
+
+            <AttendanceBar
+              present={item.present}
+              total={item.total}
+              targetPct={item.subject.target_pct}
+            />
+
+            <View style={s.markRow}>
+              <Text style={s.markLabel}>Today</Text>
+              <View style={s.markBtns}>
+                <TouchableOpacity
+                  style={[
+                    s.markBtn,
+                    item.todayStatus === 'present' && s.markBtnActiveGood,
+                  ]}
+                  onPress={() => mark(item.subject.id, 'present')}
+                  disabled={marking !== null}
+                  accessibilityLabel={`Mark ${item.subject.name} present`}
+                >
+                  {marking === item.subject.id + 'present' ? (
+                    <ActivityIndicator size="small" color={C.accent} />
+                  ) : (
+                    <Text style={[
+                      s.markBtnText,
+                      item.todayStatus === 'present' && { color: '#0b0c10' },
+                    ]}>P</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    s.markBtn,
+                    item.todayStatus === 'absent' && s.markBtnActiveBad,
+                  ]}
+                  onPress={() => mark(item.subject.id, 'absent')}
+                  disabled={marking !== null}
+                  accessibilityLabel={`Mark ${item.subject.name} absent`}
+                >
+                  {marking === item.subject.id + 'absent' ? (
+                    <ActivityIndicator size="small" color={C.danger} />
+                  ) : (
+                    <Text style={[
+                      s.markBtnText,
+                      item.todayStatus === 'absent' && { color: '#fff' },
+                    ]}>A</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+        ListEmptyComponent={
+          <Text style={s.emptyText}>No subjects yet. Add them in Settings.</Text>
+        }
+      />
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: { padding: 20, paddingBottom: 8 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  list: { padding: 16, gap: 12, paddingBottom: 80 },
+  card: { backgroundColor: C.card, borderRadius: 14, padding: 16, gap: 12 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardLeft: { gap: 2 },
+  subjectName: { fontSize: 16, fontWeight: '600', color: C.text },
+  subjectStats: { fontSize: 12, color: C.muted },
+  markRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  markLabel: { fontSize: 13, color: C.muted },
+  markBtns: { flexDirection: 'row', gap: 8 },
+  markBtn: {
+    width: 44, height: 36, borderRadius: 8,
+    backgroundColor: '#1a1b20', alignItems: 'center', justifyContent: 'center',
+  },
+  markBtnActiveGood: { backgroundColor: C.accent },
+  markBtnActiveBad: { backgroundColor: C.danger },
+  markBtnText: { fontSize: 14, fontWeight: '700', color: C.muted },
+  emptyText: { textAlign: 'center', color: C.muted, marginTop: 48, fontSize: 14 },
+});
+```
+
+- [ ] **Step 3: Create `app/attendance/[subjectId].tsx`**
+
+```typescript
+import { useCallback, useMemo } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity,
+  StyleSheet, ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { useSubjectsStore } from '../../src/stores/subjectsStore';
+import { upsertAttendance } from '../../src/db/attendance';
+import {
+  computeAttendancePct,
+  canSkip,
+  classesToRecover,
+  verdictForSubject,
+} from '../../src/engine/predictionEngine';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98', danger: '#ff5c5c', warning: '#ffc857',
+};
+
+export default function SubjectDetailScreen() {
+  const { subjectId } = useLocalSearchParams<{ subjectId: string }>();
+  const { profile } = useAuthStore();
+  const { subjects, records, fetch } = useSubjectsStore();
+
+  const subject = subjects.find(s => s.id === subjectId);
+  const subjectRecords = useMemo(
+    () => records
+      .filter(r => r.subject_id === subjectId)
+      .sort((a, b) => b.date.localeCompare(a.date)),
+    [records, subjectId],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (profile) fetch(profile.id);
+    }, [profile?.id]),
+  );
+
+  if (!subject) return null;
+
+  const present = subjectRecords.filter(r => r.status === 'present').length;
+  const total = subjectRecords.length;
+  const pct = computeAttendancePct(present, total);
+  const verdict = verdictForSubject(present, total, subject.target_pct);
+  const skipsLeft = (() => {
+    let n = 0;
+    while (canSkip(present, total + n, subject.target_pct)) n++;
+    return n;
+  })();
+  const needed = classesToRecover(present, total, subject.target_pct);
+
+  const verdictColor =
+    verdict === 'safe' ? C.accent : verdict === 'warning' ? C.warning : C.danger;
+
+  async function toggleRecord(recordId: string, date: string, currentStatus: 'present' | 'absent') {
+    if (!profile) return;
+    const next = currentStatus === 'present' ? 'absent' : 'present';
+    await upsertAttendance(profile.id, subject!.id, date, next);
+    fetch(profile.id);
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Go back" style={s.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title} numberOfLines={1}>{subject.name}</Text>
+      </View>
+
+      <View style={s.statsRow}>
+        <View style={s.statBox}>
+          <Text style={[s.statValue, { color: verdictColor }]}>{pct}%</Text>
+          <Text style={s.statLabel}>Attendance</Text>
+        </View>
+        <View style={s.statBox}>
+          <Text style={s.statValue}>{present}/{total}</Text>
+          <Text style={s.statLabel}>Present/Total</Text>
+        </View>
+        {verdict === 'danger' ? (
+          <View style={s.statBox}>
+            <Text style={[s.statValue, { color: C.danger }]}>{needed}</Text>
+            <Text style={s.statLabel}>Classes needed</Text>
+          </View>
+        ) : (
+          <View style={s.statBox}>
+            <Text style={[s.statValue, { color: C.accent }]}>{skipsLeft}</Text>
+            <Text style={s.statLabel}>Safe skips</Text>
+          </View>
+        )}
+      </View>
+
+      <FlatList
+        data={subjectRecords}
+        keyExtractor={r => r.id}
+        contentContainerStyle={s.list}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={s.record}
+            onPress={() => toggleRecord(item.id, item.date, item.status)}
+            accessibilityLabel={`${item.date} ${item.status}, tap to toggle`}
+          >
+            <Text style={s.recordDate}>{item.date}</Text>
+            <View style={[
+              s.badge,
+              item.status === 'present' ? s.badgePresent : s.badgeAbsent,
+            ]}>
+              <Text style={[
+                s.badgeText,
+                item.status === 'present' ? { color: C.accent } : { color: C.danger },
+              ]}>
+                {item.status === 'present' ? 'Present' : 'Absent'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <Text style={s.emptyText}>No records yet. Mark attendance from the main screen.</Text>
+        }
+      />
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 20, paddingBottom: 12,
+  },
+  backBtn: { padding: 4 },
+  title: { fontSize: 20, fontWeight: '700', color: C.text, flex: 1 },
+  statsRow: {
+    flexDirection: 'row', justifyContent: 'space-around',
+    backgroundColor: C.card, marginHorizontal: 16,
+    borderRadius: 14, padding: 16, marginBottom: 16,
+  },
+  statBox: { alignItems: 'center', gap: 4 },
+  statValue: { fontSize: 22, fontWeight: '700', color: C.text },
+  statLabel: { fontSize: 11, color: C.muted },
+  list: { paddingHorizontal: 16, gap: 8, paddingBottom: 80 },
+  record: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', backgroundColor: C.card,
+    borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12,
+  },
+  recordDate: { fontSize: 14, color: C.text },
+  badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  badgePresent: { backgroundColor: '#1a3a38' },
+  badgeAbsent: { backgroundColor: '#3a1010' },
+  badgeText: { fontSize: 12, fontWeight: '600' },
+  emptyText: { textAlign: 'center', color: C.muted, marginTop: 48, fontSize: 14 },
+});
+```
+
+- [ ] **Step 4: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/attendance/
+git commit -m "feat: attendance screen with daily marking and subject detail with history"
+```
+
+---
+
+### Task 12: Timetable Screen
+
+**Files:**
+- Create: `app/timetable/_layout.tsx`
+- Create: `app/timetable/index.tsx`
+
+- [ ] **Step 1: Create `app/timetable/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function TimetableLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 2: Create `app/timetable/index.tsx`**
+
+```typescript
+import { useCallback, useMemo, useState } from 'react';
+import {
+  View, Text, SectionList, TouchableOpacity,
+  Modal, TextInput, StyleSheet, ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { useTimetableStore } from '../../src/stores/timetableStore';
+import {
+  upsertUserTimetableEntry,
+  deleteUserTimetableEntry,
+} from '../../src/db/timetable';
+import type { TimetableSlot } from '../../src/types';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98',
+};
+
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+export default function TimetableScreen() {
+  const { profile } = useAuthStore();
+  const { slots, userEntries, loading, fetch } = useTimetableStore();
+  const [editingSlot, setEditingSlot] = useState<TimetableSlot | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (profile) fetch(profile.id);
+    }, [profile?.id]),
+  );
+
+  const sections = useMemo(() =>
+    DAY_NAMES
+      .map((day, i) => ({
+        title: day,
+        data: slots.filter(slot => slot.day_of_week === i),
+      }))
+      .filter(s => s.data.length > 0),
+    [slots],
+  );
+
+  function getSubjectForSlot(slotId: string): string | null {
+    return userEntries.find(e => e.slot_id === slotId)?.subject_name ?? null;
+  }
+
+  function openEdit(slot: TimetableSlot) {
+    setEditingSlot(slot);
+    setInputValue(getSubjectForSlot(slot.id) ?? '');
+  }
+
+  async function saveEdit() {
+    if (!editingSlot || !profile) return;
+    setSaving(true);
+    const val = inputValue.trim();
+    if (val) {
+      await upsertUserTimetableEntry(profile.id, editingSlot.id, val);
+    } else {
+      await deleteUserTimetableEntry(profile.id, editingSlot.id);
+    }
+    await fetch(profile.id);
+    setSaving(false);
+    setEditingSlot(null);
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Go back" style={s.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title}>Timetable</Text>
+      </View>
+
+      {loading && slots.length === 0 ? (
+        <View style={s.center}>
+          <ActivityIndicator color={C.accent} />
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={item => item.id}
+          contentContainerStyle={s.list}
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) => (
+            <Text style={s.dayHeader}>{section.title}</Text>
+          )}
+          renderItem={({ item }) => {
+            const subjectName = getSubjectForSlot(item.id);
+            return (
+              <TouchableOpacity
+                style={s.slotRow}
+                onPress={() => openEdit(item)}
+                accessibilityLabel={`${item.start_time.slice(0, 5)} to ${item.end_time.slice(0, 5)}, ${subjectName ?? 'empty'}`}
+              >
+                <Text style={s.slotTime}>
+                  {item.start_time.slice(0, 5)} – {item.end_time.slice(0, 5)}
+                </Text>
+                <Text style={subjectName ? s.slotFilled : s.slotEmpty} numberOfLines={1}>
+                  {subjectName ?? '+ Add subject'}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
+
+      <Modal visible={!!editingSlot} transparent animationType="slide" onRequestClose={() => setEditingSlot(null)}>
+        <View style={s.overlay}>
+          <View style={s.sheet}>
+            <Text style={s.sheetTitle}>
+              {editingSlot?.start_time.slice(0, 5)} – {editingSlot?.end_time.slice(0, 5)}
+            </Text>
+            <TextInput
+              style={s.input}
+              placeholder="Subject name (leave empty to clear)"
+              placeholderTextColor={C.muted}
+              value={inputValue}
+              onChangeText={setInputValue}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={saveEdit}
+            />
+            <TouchableOpacity
+              style={[s.saveBtn, saving && { opacity: 0.6 }]}
+              onPress={saveEdit}
+              disabled={saving}
+              accessibilityLabel="Save subject"
+            >
+              {saving
+                ? <ActivityIndicator color="#0b0c10" />
+                : <Text style={s.saveBtnText}>Save</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setEditingSlot(null)}
+              style={s.cancelBtn}
+              accessibilityLabel="Cancel"
+            >
+              <Text style={s.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 12, padding: 20, paddingBottom: 8,
+  },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  list: { paddingHorizontal: 16, paddingBottom: 80 },
+  dayHeader: {
+    fontSize: 12, color: C.muted, fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: 0.5,
+    marginTop: 20, marginBottom: 8,
+  },
+  slotRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', backgroundColor: C.card,
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 6,
+  },
+  slotTime: { fontSize: 13, color: C.muted, minWidth: 90 },
+  slotFilled: { fontSize: 14, color: C.accent, fontWeight: '500', flex: 1, textAlign: 'right' },
+  slotEmpty: { fontSize: 13, color: '#333', flex: 1, textAlign: 'right' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 12 },
+  sheetTitle: { fontSize: 13, color: C.muted, marginBottom: 16 },
+  input: {
+    backgroundColor: C.bg, borderRadius: 10,
+    padding: 14, color: C.text, fontSize: 15, marginBottom: 12,
+  },
+  saveBtn: {
+    backgroundColor: C.accent, borderRadius: 999,
+    padding: 14, alignItems: 'center', marginBottom: 8,
+  },
+  saveBtnText: { color: '#0b0c10', fontWeight: '700', fontSize: 15 },
+  cancelBtn: { alignItems: 'center', padding: 10 },
+  cancelBtnText: { color: C.muted, fontSize: 14 },
+});
+```
+
+- [ ] **Step 3: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add app/timetable/
+git commit -m "feat: timetable screen — weekly slots view with tap-to-edit subject names"
+```
+
+---
+
+### Task 13: Feed Screen
+
+**Files:**
+- Create: `app/feed/_layout.tsx`
+- Create: `app/feed/index.tsx`
+
+- [ ] **Step 1: Create `app/feed/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function FeedLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 2: Create `app/feed/index.tsx`**
+
+```typescript
+import { useCallback, useEffect, useState } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, Modal,
+  TextInput, StyleSheet, ActivityIndicator, KeyboardAvoidingView,
+  Platform, Alert,
+} from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { getFeedPosts, createFeedPost } from '../../src/db/feed';
+import { supabase } from '../../src/lib/supabase';
+import FeedCard from '../../src/components/FeedCard';
+import type { FeedPost } from '../../src/types';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98',
+};
+
+const EXPIRY_OPTIONS = [
+  { label: '1 hour',  hours: 1 },
+  { label: '3 hours', hours: 3 },
+  { label: '6 hours', hours: 6 },
+  { label: '24 hours', hours: 24 },
+];
+
+export default function FeedScreen() {
+  const { profile } = useAuthStore();
+  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [location, setLocation] = useState('');
+  const [expiryHours, setExpiryHours] = useState(3);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function loadPosts() {
+    setLoading(true);
+    const data = await getFeedPosts();
+    setPosts(data);
+    setLoading(false);
+  }
+
+  useFocusEffect(useCallback(() => { loadPosts(); }, []));
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('feed-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'feed_posts' },
+        () => { loadPosts(); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  async function handleCreate() {
+    if (!title.trim()) { Alert.alert('Title required'); return; }
+    if (!body.trim()) { Alert.alert('Body required'); return; }
+    if (!profile) return;
+    setSubmitting(true);
+    const expiresAt = new Date(Date.now() + expiryHours * 3600 * 1000).toISOString();
+    await createFeedPost(
+      profile.id,
+      title.trim(),
+      body.trim(),
+      location.trim() || null,
+      expiresAt,
+    );
+    setSubmitting(false);
+    setShowCreate(false);
+    setTitle(''); setBody(''); setLocation(''); setExpiryHours(3);
+    loadPosts();
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Go back" style={s.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title}>Feed</Text>
+      </View>
+
+      <FlatList
+        data={posts}
+        keyExtractor={p => p.id}
+        contentContainerStyle={s.list}
+        refreshing={loading}
+        onRefresh={loadPosts}
+        renderItem={({ item }) => <FeedCard post={item} />}
+        ListEmptyComponent={
+          loading ? null : (
+            <Text style={s.emptyText}>No active posts. Be the first to post!</Text>
+          )
+        }
+      />
+
+      <TouchableOpacity
+        style={s.fab}
+        onPress={() => setShowCreate(true)}
+        accessibilityLabel="Create post"
+      >
+        <Ionicons name="add" size={28} color="#0b0c10" />
+      </TouchableOpacity>
+
+      <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
+        <KeyboardAvoidingView
+          style={s.modalWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={s.sheet}>
+            <Text style={s.sheetTitle}>New Post</Text>
+
+            <TextInput
+              style={s.input}
+              placeholder="Title"
+              placeholderTextColor={C.muted}
+              value={title}
+              onChangeText={setTitle}
+              maxLength={80}
+            />
+            <TextInput
+              style={[s.input, s.inputMulti]}
+              placeholder="What's happening? (free food, event, announcement…)"
+              placeholderTextColor={C.muted}
+              value={body}
+              onChangeText={setBody}
+              multiline
+              maxLength={400}
+            />
+            <TextInput
+              style={s.input}
+              placeholder="Location (optional)"
+              placeholderTextColor={C.muted}
+              value={location}
+              onChangeText={setLocation}
+              maxLength={80}
+            />
+
+            <Text style={s.fieldLabel}>Expires in</Text>
+            <View style={s.expiryRow}>
+              {EXPIRY_OPTIONS.map(opt => (
+                <TouchableOpacity
+                  key={opt.hours}
+                  style={[s.expiryBtn, expiryHours === opt.hours && s.expiryBtnActive]}
+                  onPress={() => setExpiryHours(opt.hours)}
+                  accessibilityLabel={`Expire in ${opt.label}`}
+                >
+                  <Text style={[
+                    s.expiryBtnText,
+                    expiryHours === opt.hours && { color: '#0b0c10' },
+                  ]}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[s.submitBtn, submitting && { opacity: 0.6 }]}
+              onPress={handleCreate}
+              disabled={submitting}
+              accessibilityLabel="Submit post"
+            >
+              {submitting
+                ? <ActivityIndicator color="#0b0c10" />
+                : <Text style={s.submitBtnText}>Post</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowCreate(false)}
+              style={s.cancelBtn}
+              accessibilityLabel="Cancel"
+            >
+              <Text style={s.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 12, padding: 20, paddingBottom: 8,
+  },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  list: { paddingHorizontal: 16, paddingBottom: 100 },
+  emptyText: { textAlign: 'center', color: C.muted, marginTop: 60, fontSize: 14 },
+  fab: {
+    position: 'absolute', bottom: 24, right: 24,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center',
+    elevation: 4,
+  },
+  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 12 },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 16 },
+  input: {
+    backgroundColor: C.bg, borderRadius: 10,
+    padding: 13, color: C.text, fontSize: 14, marginBottom: 10,
+  },
+  inputMulti: { minHeight: 90, textAlignVertical: 'top' },
+  fieldLabel: { fontSize: 12, color: C.muted, marginBottom: 8 },
+  expiryRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  expiryBtn: {
+    flex: 1, borderRadius: 8, paddingVertical: 8,
+    backgroundColor: '#1a1b20', alignItems: 'center',
+  },
+  expiryBtnActive: { backgroundColor: C.accent },
+  expiryBtnText: { fontSize: 12, color: C.muted, fontWeight: '500' },
+  submitBtn: {
+    backgroundColor: C.accent, borderRadius: 999,
+    padding: 14, alignItems: 'center', marginBottom: 8,
+  },
+  submitBtnText: { color: '#0b0c10', fontWeight: '700', fontSize: 15 },
+  cancelBtn: { alignItems: 'center', padding: 10 },
+  cancelText: { color: C.muted, fontSize: 14 },
+});
+```
+
+- [ ] **Step 3: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add app/feed/
+git commit -m "feat: feed screen with realtime posts, expiry options, and create modal"
+```
+
+---
+
+### Task 14: Wall Screen
+
+**Files:**
+- Create: `app/wall/_layout.tsx`
+- Create: `app/wall/index.tsx`
+
+- [ ] **Step 1: Create `app/wall/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function WallLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 2: Create `app/wall/index.tsx`**
+
+```typescript
+import { useCallback, useEffect, useState } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, Modal,
+  TextInput, StyleSheet, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
+} from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { getWallEntries, createWallEntry } from '../../src/db/wall';
+import { supabase } from '../../src/lib/supabase';
+import WallCard from '../../src/components/WallCard';
+import type { WallEntry } from '../../src/types';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98',
+};
+
+const COLORS = ['#66fcf1', '#ffc857', '#ff5c5c', '#a78bfa', '#34d399', '#fb923c'];
+
+export default function WallScreen() {
+  const [entries, setEntries] = useState<WallEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [content, setContent] = useState('');
+  const [selectedColor, setSelectedColor] = useState(COLORS[0]);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function loadEntries() {
+    setLoading(true);
+    const data = await getWallEntries();
+    setEntries(data);
+    setLoading(false);
+  }
+
+  useFocusEffect(useCallback(() => { loadEntries(); }, []));
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('wall-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'wall_entries' },
+        payload => {
+          setEntries(prev => [payload.new as WallEntry, ...prev]);
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  async function handleCreate() {
+    if (!content.trim()) return;
+    setSubmitting(true);
+    await createWallEntry(content.trim(), selectedColor);
+    setSubmitting(false);
+    setShowCreate(false);
+    setContent('');
+    setSelectedColor(COLORS[0]);
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Go back" style={s.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <View>
+          <Text style={s.title}>Wall</Text>
+          <Text style={s.subtitle}>Anonymous · expires in 24h</Text>
+        </View>
+      </View>
+
+      <FlatList
+        data={entries}
+        keyExtractor={e => e.id}
+        contentContainerStyle={s.list}
+        refreshing={loading}
+        onRefresh={loadEntries}
+        renderItem={({ item }) => <WallCard entry={item} />}
+        ListEmptyComponent={
+          loading ? null : (
+            <Text style={s.emptyText}>The wall is empty. Leave a message.</Text>
+          )
+        }
+      />
+
+      <TouchableOpacity
+        style={s.fab}
+        onPress={() => setShowCreate(true)}
+        accessibilityLabel="Add to wall"
+      >
+        <Ionicons name="pencil" size={22} color="#0b0c10" />
+      </TouchableOpacity>
+
+      <Modal
+        visible={showCreate}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowCreate(false)}
+      >
+        <KeyboardAvoidingView
+          style={s.modalWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={s.sheet}>
+            <Text style={s.sheetTitle}>Leave a message</Text>
+            <Text style={s.sheetSub}>Anonymous · disappears in 24 hours</Text>
+
+            <TextInput
+              style={[s.input, s.inputMulti]}
+              placeholder="Say something…"
+              placeholderTextColor={C.muted}
+              value={content}
+              onChangeText={setContent}
+              multiline
+              maxLength={280}
+              autoFocus
+            />
+            <Text style={s.charCount}>{content.length}/280</Text>
+
+            <Text style={s.fieldLabel}>Colour</Text>
+            <View style={s.colorRow}>
+              {COLORS.map(color => (
+                <TouchableOpacity
+                  key={color}
+                  style={[
+                    s.colorDot,
+                    { backgroundColor: color },
+                    selectedColor === color && s.colorDotSelected,
+                  ]}
+                  onPress={() => setSelectedColor(color)}
+                  accessibilityLabel={`Select color ${color}`}
+                />
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[s.submitBtn, (!content.trim() || submitting) && { opacity: 0.5 }]}
+              onPress={handleCreate}
+              disabled={!content.trim() || submitting}
+              accessibilityLabel="Post to wall"
+            >
+              {submitting
+                ? <ActivityIndicator color="#0b0c10" />
+                : <Text style={s.submitBtnText}>Post</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowCreate(false)}
+              style={s.cancelBtn}
+              accessibilityLabel="Cancel"
+            >
+              <Text style={s.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 12, padding: 20, paddingBottom: 8,
+  },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  subtitle: { fontSize: 12, color: C.muted, marginTop: 2 },
+  list: { paddingHorizontal: 16, paddingBottom: 100 },
+  emptyText: { textAlign: 'center', color: C.muted, marginTop: 60, fontSize: 14 },
+  fab: {
+    position: 'absolute', bottom: 24, right: 24,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center',
+    elevation: 4,
+  },
+  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 12 },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 4 },
+  sheetSub: { fontSize: 12, color: C.muted, marginBottom: 16 },
+  input: {
+    backgroundColor: C.bg, borderRadius: 10,
+    padding: 13, color: C.text, fontSize: 14, marginBottom: 4,
+  },
+  inputMulti: { minHeight: 100, textAlignVertical: 'top' },
+  charCount: { fontSize: 11, color: C.muted, textAlign: 'right', marginBottom: 16 },
+  fieldLabel: { fontSize: 12, color: C.muted, marginBottom: 10 },
+  colorRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  colorDot: { width: 28, height: 28, borderRadius: 14 },
+  colorDotSelected: { borderWidth: 3, borderColor: '#fff' },
+  submitBtn: {
+    backgroundColor: C.accent, borderRadius: 999,
+    padding: 14, alignItems: 'center', marginBottom: 8,
+  },
+  submitBtnText: { color: '#0b0c10', fontWeight: '700', fontSize: 15 },
+  cancelBtn: { alignItems: 'center', padding: 10 },
+  cancelText: { color: C.muted, fontSize: 14 },
+});
+```
+
+- [ ] **Step 3: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add app/wall/
+git commit -m "feat: anonymous wall with realtime updates, colour picker, 24h expiry"
+```
+
+---
+
+### Task 15: Mess Screen
+
+**Files:**
+- Create: `app/mess/_layout.tsx`
+- Create: `app/mess/index.tsx`
+
+- [ ] **Step 1: Create `app/mess/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function MessLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 2: Create `app/mess/index.tsx`**
+
+```typescript
+import { useEffect, useState } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator,
+} from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { getMessMenuForDay, computeDayCycle } from '../../src/db/mess';
+import { supabase } from '../../src/lib/supabase';
+import MealRow from '../../src/components/MealRow';
+import type { Mess, MessMenu } from '../../src/types';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98',
+};
+
+const MEAL_ORDER = ['breakfast', 'lunch', 'evening', 'dinner'] as const;
+
+export default function MessScreen() {
+  const { profile } = useAuthStore();
+  const [mess, setMess] = useState<Mess | null>(null);
+  const [menus, setMenus] = useState<MessMenu[]>([]);
+  const [dayCycle, setDayCycle] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!profile?.mess_id) { setLoading(false); return; }
+    setLoading(true);
+    supabase
+      .from('messes')
+      .select('*')
+      .eq('id', profile.mess_id)
+      .single()
+      .then(async ({ data }) => {
+        if (!data) { setLoading(false); return; }
+        const typedMess = data as Mess;
+        const cycle = computeDayCycle(typedMess.cycle_start_date, typedMess.cycle_length);
+        setMess(typedMess);
+        setDayCycle(cycle);
+        const menuData = await getMessMenuForDay(typedMess.id, cycle);
+        setMenus(menuData);
+        setLoading(false);
+      });
+  }, [profile?.mess_id]);
+
+  const meals = MEAL_ORDER.map(meal => ({
+    meal,
+    items: menus.find(m => m.meal === meal)?.items ?? [],
+  }));
+
+  const todayStr = new Date().toLocaleDateString('en-IN', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Go back" style={s.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <View>
+          <Text style={s.title}>Mess Menu</Text>
+          {mess && <Text style={s.messName}>{mess.name}</Text>}
+        </View>
+      </View>
+
+      {loading ? (
+        <View style={s.center}>
+          <ActivityIndicator color={C.accent} />
+        </View>
+      ) : !profile?.mess_id ? (
+        <View style={s.center}>
+          <Text style={s.emptyText}>No mess selected.</Text>
+          <TouchableOpacity
+            style={s.settingsBtn}
+            onPress={() => router.push('/settings')}
+            accessibilityLabel="Go to settings to select mess"
+          >
+            <Text style={s.settingsBtnText}>Select in Settings</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={s.scroll}>
+          <View style={s.dateBadge}>
+            <Text style={s.dateText}>{todayStr}</Text>
+            {dayCycle !== null && (
+              <View style={s.cycleBadge}>
+                <Text style={s.cycleText}>Day {dayCycle}</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={s.card}>
+            {meals.map(({ meal, items }) => (
+              <MealRow key={meal} meal={meal} items={items} />
+            ))}
+          </View>
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 12, padding: 20, paddingBottom: 8,
+  },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  messName: { fontSize: 13, color: C.muted, marginTop: 2 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  emptyText: { fontSize: 14, color: C.muted },
+  settingsBtn: {
+    backgroundColor: C.accent, borderRadius: 999,
+    paddingHorizontal: 20, paddingVertical: 10,
+  },
+  settingsBtnText: { color: '#0b0c10', fontWeight: '700', fontSize: 14 },
+  scroll: { padding: 16, paddingBottom: 80 },
+  dateBadge: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 16,
+  },
+  dateText: { fontSize: 14, color: C.muted },
+  cycleBadge: {
+    backgroundColor: '#1a3a38', borderRadius: 999,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  cycleText: { fontSize: 12, color: C.accent, fontWeight: '600' },
+  card: {
+    backgroundColor: C.card, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 4,
+  },
+});
+```
+
+- [ ] **Step 3: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add app/mess/
+git commit -m "feat: mess screen with daily menu, day cycle indicator, and settings fallback"
+```
+
+---
+
+### Task 16: Notes Screen
+
+**Files:**
+- Create: `app/notes/_layout.tsx`
+- Create: `app/notes/index.tsx`
+
+- [ ] **Step 1: Create `app/notes/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function NotesLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 2: Create `app/notes/index.tsx`**
+
+```typescript
+import { useCallback, useEffect, useState } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, Modal,
+  TextInput, StyleSheet, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Alert, Linking,
+} from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import { useAuthStore } from '../../src/stores/authStore';
+import { getNotesBySubject, getNotesBySemester, uploadNote, getSignedUrl, incrementDownloadCount } from '../../src/db/notes';
+import { supabase } from '../../src/lib/supabase';
+import NoteCard from '../../src/components/NoteCard';
+import type { Note } from '../../src/types';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98',
+};
+
+type FilterMode = 'subject' | 'semester';
+
+export default function NotesScreen() {
+  const { profile } = useAuthStore();
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [filterMode, setFilterMode] = useState<FilterMode>('subject');
+  const [filterValue, setFilterValue] = useState('');
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadSubject, setUploadSubject] = useState('');
+  const [uploadSemester, setUploadSemester] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  async function loadNotes() {
+    if (!filterValue.trim()) { setNotes([]); return; }
+    setLoading(true);
+    const data = filterMode === 'subject'
+      ? await getNotesBySubject(filterValue.trim())
+      : await getNotesBySemester(filterValue.trim());
+    setNotes(data);
+    setLoading(false);
+  }
+
+  useFocusEffect(useCallback(() => { loadNotes(); }, [filterMode, filterValue]));
+
+  useEffect(() => { loadNotes(); }, [filterMode, filterValue]);
+
+  async function handleUpload() {
+    if (!uploadTitle.trim() || !uploadSubject.trim() || !uploadSemester.trim()) {
+      Alert.alert('All fields required');
+      return;
+    }
+    if (!profile) return;
+
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    const ext = asset.name.split('.').pop() ?? 'pdf';
+    const storagePath = `${profile.id}/${Date.now()}.${ext}`;
+
+    setUploading(true);
+    const response = await fetch(asset.uri);
+    const blob = await response.blob();
+
+    const { error: uploadError } = await supabase.storage
+      .from('notes')
+      .upload(storagePath, blob, { contentType: asset.mimeType ?? 'application/octet-stream' });
+
+    if (uploadError) {
+      setUploading(false);
+      Alert.alert('Upload failed', uploadError.message);
+      return;
+    }
+
+    await uploadNote(profile.id, uploadSubject.trim(), uploadSemester.trim(), uploadTitle.trim(), storagePath);
+    setUploading(false);
+    setShowUpload(false);
+    setUploadTitle(''); setUploadSubject(''); setUploadSemester('');
+    loadNotes();
+  }
+
+  async function handleDownload(note: Note) {
+    setDownloading(note.id);
+    try {
+      const url = await getSignedUrl(note.file_path);
+      await incrementDownloadCount(note.id);
+      await Linking.openURL(url);
+      setNotes(prev => prev.map(n => n.id === note.id
+        ? { ...n, download_count: n.download_count + 1 }
+        : n,
+      ));
+    } catch {
+      Alert.alert('Download failed', 'Could not open the file.');
+    }
+    setDownloading(null);
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Go back" style={s.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title}>Notes</Text>
+      </View>
+
+      {/* Filter toggle */}
+      <View style={s.segmentRow}>
+        {(['subject', 'semester'] as FilterMode[]).map(mode => (
+          <TouchableOpacity
+            key={mode}
+            style={[s.segBtn, filterMode === mode && s.segBtnActive]}
+            onPress={() => { setFilterMode(mode); setFilterValue(''); }}
+            accessibilityLabel={`Filter by ${mode}`}
+          >
+            <Text style={[s.segBtnText, filterMode === mode && { color: '#0b0c10' }]}>
+              {mode.charAt(0).toUpperCase() + mode.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={s.searchRow}>
+        <Ionicons name="search-outline" size={16} color={C.muted} style={s.searchIcon} />
+        <TextInput
+          style={s.searchInput}
+          placeholder={filterMode === 'subject' ? 'e.g. Maths' : 'e.g. S4'}
+          placeholderTextColor={C.muted}
+          value={filterValue}
+          onChangeText={setFilterValue}
+          returnKeyType="search"
+        />
+      </View>
+
+      <FlatList
+        data={notes}
+        keyExtractor={n => n.id}
+        contentContainerStyle={s.list}
+        refreshing={loading}
+        onRefresh={loadNotes}
+        renderItem={({ item }) => (
+          <View style={s.noteWrap}>
+            <NoteCard note={item} onPress={() => handleDownload(item)} />
+            {downloading === item.id && (
+              <ActivityIndicator
+                color={C.accent}
+                style={s.downloadSpinner}
+                size="small"
+              />
+            )}
+          </View>
+        )}
+        ListEmptyComponent={
+          filterValue.trim() === '' ? (
+            <Text style={s.emptyText}>Enter a subject or semester to browse notes.</Text>
+          ) : loading ? null : (
+            <Text style={s.emptyText}>No notes found for "{filterValue}".</Text>
+          )
+        }
+      />
+
+      <TouchableOpacity
+        style={s.fab}
+        onPress={() => setShowUpload(true)}
+        accessibilityLabel="Upload note"
+      >
+        <Ionicons name="cloud-upload-outline" size={24} color="#0b0c10" />
+      </TouchableOpacity>
+
+      <Modal
+        visible={showUpload}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowUpload(false)}
+      >
+        <KeyboardAvoidingView
+          style={s.modalWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={s.sheet}>
+            <Text style={s.sheetTitle}>Upload Note</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Title (e.g. Unit 3 Notes)"
+              placeholderTextColor={C.muted}
+              value={uploadTitle}
+              onChangeText={setUploadTitle}
+              maxLength={80}
+            />
+            <TextInput
+              style={s.input}
+              placeholder="Subject (e.g. Maths)"
+              placeholderTextColor={C.muted}
+              value={uploadSubject}
+              onChangeText={setUploadSubject}
+              maxLength={60}
+            />
+            <TextInput
+              style={s.input}
+              placeholder="Semester (e.g. S4)"
+              placeholderTextColor={C.muted}
+              value={uploadSemester}
+              onChangeText={setUploadSemester}
+              maxLength={10}
+              autoCapitalize="characters"
+            />
+            <TouchableOpacity
+              style={[s.submitBtn, uploading && { opacity: 0.6 }]}
+              onPress={handleUpload}
+              disabled={uploading}
+              accessibilityLabel="Pick file and upload"
+            >
+              {uploading
+                ? <ActivityIndicator color="#0b0c10" />
+                : (
+                  <View style={s.submitBtnInner}>
+                    <Ionicons name="document-attach-outline" size={18} color="#0b0c10" />
+                    <Text style={s.submitBtnText}>Pick File & Upload</Text>
+                  </View>
+                )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowUpload(false)}
+              style={s.cancelBtn}
+              accessibilityLabel="Cancel"
+            >
+              <Text style={s.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 12, padding: 20, paddingBottom: 8,
+  },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  segmentRow: {
+    flexDirection: 'row', marginHorizontal: 16,
+    backgroundColor: C.card, borderRadius: 10,
+    padding: 4, marginBottom: 12,
+  },
+  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
+  segBtnActive: { backgroundColor: C.accent },
+  segBtnText: { fontSize: 13, fontWeight: '600', color: C.muted },
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.card, borderRadius: 10,
+    marginHorizontal: 16, marginBottom: 12, paddingHorizontal: 12,
+  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, paddingVertical: 12, color: C.text, fontSize: 14 },
+  list: { paddingHorizontal: 16, paddingBottom: 100 },
+  noteWrap: { position: 'relative' },
+  downloadSpinner: { position: 'absolute', right: 16, top: 14 },
+  emptyText: { textAlign: 'center', color: C.muted, marginTop: 48, fontSize: 14 },
+  fab: {
+    position: 'absolute', bottom: 24, right: 24,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center',
+    elevation: 4,
+  },
+  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 12 },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 16 },
+  input: {
+    backgroundColor: C.bg, borderRadius: 10,
+    padding: 13, color: C.text, fontSize: 14, marginBottom: 10,
+  },
+  submitBtn: {
+    backgroundColor: C.accent, borderRadius: 999,
+    padding: 14, alignItems: 'center', marginBottom: 8,
+  },
+  submitBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  submitBtnText: { color: '#0b0c10', fontWeight: '700', fontSize: 15 },
+  cancelBtn: { alignItems: 'center', padding: 10 },
+  cancelText: { color: C.muted, fontSize: 14 },
+});
+```
+
+> **Note:** `incrementDownloadCount` in `src/db/notes.ts` calls `supabase.rpc('increment_download_count', { note_id })`. Add this Postgres function in the Supabase SQL Editor after running the migration:
+>
+> ```sql
+> create or replace function increment_download_count(note_id uuid)
+> returns void language sql as $$
+>   update notes set download_count = download_count + 1 where id = note_id;
+> $$;
+> ```
+
+- [ ] **Step 3: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add app/notes/
+git commit -m "feat: notes screen with subject/semester filter, upload via document picker, signed-URL download"
+```
+
+---
+
+### Task 17: Gym Screen
+
+**Files:**
+- Create: `src/db/gym.ts`
+- Create: `app/gym/_layout.tsx`
+- Create: `app/gym/index.tsx`
+
+> **Migration:** Run in Supabase SQL Editor before testing:
+>
+> ```sql
+> create table gym_sessions (
+>   id uuid primary key default gen_random_uuid(),
+>   user_id uuid references auth.users(id) on delete cascade not null,
+>   scheduled_at timestamptz not null,
+>   done boolean default false,
+>   notes text,
+>   created_at timestamptz default now()
+> );
+> alter table gym_sessions enable row level security;
+> create policy "Users manage own gym sessions"
+>   on gym_sessions for all using (auth.uid() = user_id);
+> ```
+
+- [ ] **Step 1: Create `src/db/gym.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+
+export type GymSession = {
+  id: string;
+  user_id: string;
+  scheduled_at: string;
+  done: boolean;
+  notes: string | null;
+  created_at: string;
+};
+
+export async function getGymSessions(userId: string): Promise<GymSession[]> {
+  const { data } = await supabase
+    .from('gym_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('scheduled_at', { ascending: true });
+  return data ?? [];
+}
+
+export async function addGymSession(
+  userId: string,
+  scheduledAt: string,
+  notes?: string,
+): Promise<void> {
+  await supabase.from('gym_sessions').insert({
+    user_id: userId,
+    scheduled_at: scheduledAt,
+    notes: notes ?? null,
+  });
+}
+
+export async function markGymDone(sessionId: string): Promise<void> {
+  await supabase
+    .from('gym_sessions')
+    .update({ done: true })
+    .eq('id', sessionId);
+}
+
+export async function deleteGymSession(sessionId: string): Promise<void> {
+  await supabase.from('gym_sessions').delete().eq('id', sessionId);
+}
+```
+
+- [ ] **Step 2: Create `app/gym/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function GymLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 3: Create `app/gym/index.tsx`**
+
+```typescript
+import { useCallback, useState } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, Modal,
+  StyleSheet, Alert, Platform, ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useAuthStore } from '../../src/stores/authStore';
+import {
+  getGymSessions, addGymSession, markGymDone, deleteGymSession,
+  type GymSession,
+} from '../../src/db/gym';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98', danger: '#ff5c5c',
+};
+
+const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function fmtDate(iso: string) {
+  const d = new Date(iso);
+  return `${DAY[d.getDay()]} ${d.getDate()} ${MONTH[d.getMonth()]}`;
+}
+function fmtTime(iso: string) {
+  const d = new Date(iso);
+  const h = d.getHours(), m = d.getMinutes();
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${m.toString().padStart(2, '0')} ${suffix}`;
+}
+
+export default function GymScreen() {
+  const { profile } = useAuthStore();
+  const [sessions, setSessions] = useState<GymSession[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [pickerStep, setPickerStep] = useState<'date' | 'time'>('date');
+  const [pickedDate, setPickedDate] = useState(new Date());
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    if (!profile) return;
+    setLoading(true);
+    setSessions(await getGymSessions(profile.id));
+    setLoading(false);
+  }
+
+  useFocusEffect(useCallback(() => { load(); }, []));
+
+  async function handleAdd() {
+    if (!profile) return;
+    setSaving(true);
+    await addGymSession(profile.id, pickedDate.toISOString());
+    setSaving(false);
+    setShowModal(false);
+    setPickedDate(new Date());
+    setPickerStep('date');
+    load();
+  }
+
+  async function handleDone(session: GymSession) {
+    await markGymDone(session.id);
+    setSessions(prev =>
+      prev.map(s => s.id === session.id ? { ...s, done: true } : s),
+    );
+  }
+
+  async function handleDelete(session: GymSession) {
+    Alert.alert('Remove session?', fmtDate(session.scheduled_at), [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive',
+        onPress: async () => {
+          await deleteGymSession(session.id);
+          setSessions(prev => prev.filter(s => s.id !== session.id));
+        },
+      },
+    ]);
+  }
+
+  const upcoming = sessions.filter(s => !s.done && new Date(s.scheduled_at) >= new Date());
+  const past = sessions.filter(s => s.done || new Date(s.scheduled_at) < new Date());
+
+  function SessionCard({ item }: { item: GymSession }) {
+    const isPast = item.done || new Date(item.scheduled_at) < new Date();
+    return (
+      <View style={[s.card, isPast && s.cardPast]}>
+        <View style={s.cardLeft}>
+          <Ionicons name="barbell-outline" size={20} color={item.done ? C.muted : C.accent} />
+          <View style={{ marginLeft: 12 }}>
+            <Text style={[s.cardDate, item.done && { color: C.muted }]}>
+              {fmtDate(item.scheduled_at)}
+            </Text>
+            <Text style={s.cardTime}>{fmtTime(item.scheduled_at)}</Text>
+          </View>
+        </View>
+        <View style={s.cardActions}>
+          {!item.done && (
+            <TouchableOpacity
+              onPress={() => handleDone(item)}
+              style={s.doneBtn}
+              accessibilityLabel="Mark done"
+            >
+              <Ionicons name="checkmark-circle-outline" size={22} color={C.accent} />
+            </TouchableOpacity>
+          )}
+          {item.done && (
+            <Ionicons name="checkmark-circle" size={22} color={C.accent} style={{ marginRight: 8 }} />
+          )}
+          <TouchableOpacity
+            onPress={() => handleDelete(item)}
+            accessibilityLabel="Delete session"
+          >
+            <Ionicons name="trash-outline" size={20} color={C.danger} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  const allSections = [
+    ...(upcoming.length ? [{ type: 'header', label: 'Upcoming' }, ...upcoming.map(s => ({ type: 'session', ...s }))] : []),
+    ...(past.length ? [{ type: 'header', label: 'Past' }, ...past.map(s => ({ type: 'session', ...s }))] : []),
+  ];
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title}>Gym</Text>
+      </View>
+
+      <FlatList
+        data={allSections}
+        keyExtractor={(item, i) => ('id' in item ? item.id : `hdr-${i}`)}
+        contentContainerStyle={s.list}
+        refreshing={loading}
+        onRefresh={load}
+        renderItem={({ item }) => {
+          if (item.type === 'header') {
+            return <Text style={s.sectionLabel}>{(item as { label: string }).label}</Text>;
+          }
+          return <SessionCard item={item as unknown as GymSession} />;
+        }}
+        ListEmptyComponent={
+          loading ? null : (
+            <Text style={s.emptyText}>No sessions scheduled. Tap + to add one.</Text>
+          )
+        }
+      />
+
+      <TouchableOpacity
+        style={s.fab}
+        onPress={() => setShowModal(true)}
+        accessibilityLabel="Add gym session"
+      >
+        <Ionicons name="add" size={28} color="#0b0c10" />
+      </TouchableOpacity>
+
+      <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
+        <View style={s.modalWrap}>
+          <View style={s.sheet}>
+            <Text style={s.sheetTitle}>
+              {pickerStep === 'date' ? 'Pick a date' : 'Pick a time'}
+            </Text>
+
+            <DateTimePicker
+              value={pickedDate}
+              mode={pickerStep}
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              minimumDate={pickerStep === 'date' ? new Date() : undefined}
+              onChange={(_e, date) => {
+                if (!date) return;
+                setPickedDate(date);
+              }}
+              style={s.picker}
+              themeVariant="dark"
+            />
+
+            {pickerStep === 'date' ? (
+              <TouchableOpacity
+                style={s.nextBtn}
+                onPress={() => setPickerStep('time')}
+                accessibilityLabel="Next: pick time"
+              >
+                <Text style={s.nextBtnText}>Next: Pick Time</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[s.nextBtn, saving && { opacity: 0.6 }]}
+                onPress={handleAdd}
+                disabled={saving}
+                accessibilityLabel="Save session"
+              >
+                {saving
+                  ? <ActivityIndicator color="#0b0c10" />
+                  : <Text style={s.nextBtnText}>Save Session</Text>}
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              onPress={() => { setShowModal(false); setPickerStep('date'); }}
+              style={s.cancelBtn}
+              accessibilityLabel="Cancel"
+            >
+              <Text style={s.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 20, paddingBottom: 8 },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  list: { paddingHorizontal: 16, paddingBottom: 100 },
+  sectionLabel: { fontSize: 12, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 },
+  card: {
+    backgroundColor: C.card, borderRadius: 14, padding: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  cardPast: { opacity: 0.6 },
+  cardLeft: { flexDirection: 'row', alignItems: 'center' },
+  cardDate: { fontSize: 15, fontWeight: '600', color: C.text },
+  cardTime: { fontSize: 13, color: C.muted, marginTop: 2 },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  doneBtn: { marginRight: 4 },
+  emptyText: { textAlign: 'center', color: C.muted, marginTop: 48, fontSize: 14 },
+  fab: {
+    position: 'absolute', bottom: 24, right: 24,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center',
+    elevation: 4,
+  },
+  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 12 },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 16, textAlign: 'center' },
+  picker: { alignSelf: 'center', marginBottom: 16 },
+  nextBtn: {
+    backgroundColor: C.accent, borderRadius: 999,
+    padding: 14, alignItems: 'center', marginBottom: 8,
+  },
+  nextBtnText: { color: '#0b0c10', fontWeight: '700', fontSize: 15 },
+  cancelBtn: { alignItems: 'center', padding: 10 },
+  cancelText: { color: C.muted, fontSize: 14 },
+});
+```
+
+- [ ] **Step 4: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/db/gym.ts app/gym/
+git commit -m "feat: gym session scheduler with date/time picker and done/delete actions"
+```
+
+---
+
+### Task 18: AI Screen + ai-suggest Edge Function
+
+**Files:**
+- Create: `supabase/functions/ai-suggest/index.ts`
+- Create: `src/db/aiSuggestions.ts`
+- Create: `app/ai/_layout.tsx`
+- Create: `app/ai/index.tsx`
+
+> **Migration:** Run in Supabase SQL Editor before testing:
+>
+> ```sql
+> create table ai_suggestions (
+>   id uuid primary key default gen_random_uuid(),
+>   user_id uuid references auth.users(id) on delete cascade not null,
+>   suggestion text not null,
+>   created_at timestamptz default now()
+> );
+> alter table ai_suggestions enable row level security;
+> create policy "Users read own suggestions"
+>   on ai_suggestions for select using (auth.uid() = user_id);
+> create policy "Service role insert"
+>   on ai_suggestions for insert with check (true);
+> ```
+>
+> **Secrets:** Set in Supabase Dashboard → Settings → Edge Functions → Secrets:
+> - `GEMINI_API_KEY` — your Google AI Studio key (free tier is sufficient)
+
+- [ ] **Step 1: Create `supabase/functions/ai-suggest/index.ts`**
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY')!;
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+
+  const { user_id } = await req.json() as { user_id: string };
+  if (!user_id) return new Response(JSON.stringify({ error: 'user_id required' }), { status: 400, headers: CORS });
+
+  const db = createClient(SUPABASE_URL, SERVICE_KEY);
+
+  // Fetch user timetable with subject names
+  const { data: slots } = await db
+    .from('user_timetable')
+    .select('subject_name, slot_id')
+    .eq('user_id', user_id);
+
+  // Fetch attendance records for the last 90 days
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const { data: records } = await db
+    .from('attendance_records')
+    .select('slot_id, status')
+    .eq('user_id', user_id)
+    .gte('date', since);
+
+  // Compute attendance % per subject
+  const subjectMap: Record<string, { present: number; total: number }> = {};
+  for (const slot of (slots ?? [])) {
+    const name = slot.subject_name;
+    if (!subjectMap[name]) subjectMap[name] = { present: 0, total: 0 };
+    const subjectRecords = (records ?? []).filter(r => r.slot_id === slot.slot_id);
+    subjectMap[name].total += subjectRecords.length;
+    subjectMap[name].present += subjectRecords.filter(r => r.status === 'present').length;
+  }
+
+  const attendanceSummary = Object.entries(subjectMap)
+    .map(([subject, { present, total }]) => {
+      const pct = total > 0 ? Math.round((present / total) * 100) : 0;
+      return `${subject}: ${pct}% (${present}/${total} classes)`;
+    })
+    .join('\n');
+
+  // Fetch upcoming gym sessions
+  const { data: gymSessions } = await db
+    .from('gym_sessions')
+    .select('scheduled_at, done')
+    .eq('user_id', user_id)
+    .eq('done', false)
+    .gte('scheduled_at', new Date().toISOString())
+    .order('scheduled_at', { ascending: true })
+    .limit(5);
+
+  const gymSummary = gymSessions?.length
+    ? gymSessions.map(s => new Date(s.scheduled_at).toDateString()).join(', ')
+    : 'No upcoming gym sessions';
+
+  const prompt = `You are a helpful student assistant for a college campus app.
+Analyze this student's data and give 3–4 specific, actionable suggestions.
+Be direct and concise. Each suggestion should be 1–2 sentences.
+
+Attendance (last 90 days):
+${attendanceSummary || 'No attendance data yet.'}
+
+Upcoming gym sessions: ${gymSummary}
+
+Focus on: attendance risk subjects (below 75%), study/revision suggestions, gym consistency, and overall balance. Do not greet the user.`;
+
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 400, temperature: 0.7 },
+      }),
+    },
+  );
+
+  if (!geminiRes.ok) {
+    const err = await geminiRes.text();
+    return new Response(JSON.stringify({ error: err }), { status: 502, headers: CORS });
+  }
+
+  const geminiJson = await geminiRes.json();
+  const suggestion: string = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No suggestion generated.';
+
+  await db.from('ai_suggestions').insert({ user_id, suggestion });
+
+  return new Response(JSON.stringify({ suggestion }), {
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+});
+```
+
+- [ ] **Step 2: Create `src/db/aiSuggestions.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+
+export type AiSuggestion = {
+  id: string;
+  user_id: string;
+  suggestion: string;
+  created_at: string;
+};
+
+export async function getAiSuggestions(userId: string): Promise<AiSuggestion[]> {
+  const { data } = await supabase
+    .from('ai_suggestions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  return data ?? [];
+}
+
+export async function callAiSuggest(userId: string): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('ai-suggest', {
+    body: { user_id: userId },
+  });
+  if (error) throw error;
+  return (data as { suggestion: string }).suggestion;
+}
+```
+
+- [ ] **Step 3: Create `app/ai/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function AiLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 4: Create `app/ai/index.tsx`**
+
+```typescript
+import { useCallback, useState } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity,
+  StyleSheet, ActivityIndicator, Alert,
+} from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { getAiSuggestions, callAiSuggest, type AiSuggestion } from '../../src/db/aiSuggestions';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98',
+};
+
+const MONTH = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function fmtDateTime(iso: string) {
+  const d = new Date(iso);
+  return `${d.getDate()} ${MONTH[d.getMonth()]} · ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+}
+
+export default function AiScreen() {
+  const { profile } = useAuthStore();
+  const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  async function load() {
+    if (!profile) return;
+    setLoading(true);
+    setSuggestions(await getAiSuggestions(profile.id));
+    setLoading(false);
+  }
+
+  useFocusEffect(useCallback(() => { load(); }, []));
+
+  async function handleAnalyze() {
+    if (!profile) return;
+    setAnalyzing(true);
+    try {
+      const text = await callAiSuggest(profile.id);
+      setSuggestions(prev => [{
+        id: Date.now().toString(),
+        user_id: profile.id,
+        suggestion: text,
+        created_at: new Date().toISOString(),
+      }, ...prev]);
+    } catch {
+      Alert.alert('Analysis failed', 'Could not reach AI. Check your connection and try again.');
+    }
+    setAnalyzing(false);
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title}>AI Analysis</Text>
+      </View>
+
+      <TouchableOpacity
+        style={[s.analyzeBtn, analyzing && { opacity: 0.6 }]}
+        onPress={handleAnalyze}
+        disabled={analyzing}
+        accessibilityLabel="Get AI analysis"
+      >
+        {analyzing ? (
+          <View style={s.analyzeBtnInner}>
+            <ActivityIndicator color="#0b0c10" size="small" />
+            <Text style={s.analyzeBtnText}>Analyzing…</Text>
+          </View>
+        ) : (
+          <View style={s.analyzeBtnInner}>
+            <Ionicons name="sparkles-outline" size={18} color="#0b0c10" />
+            <Text style={s.analyzeBtnText}>Analyze My Data</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      <FlatList
+        data={suggestions}
+        keyExtractor={s => s.id}
+        contentContainerStyle={st.list}
+        refreshing={loading}
+        onRefresh={load}
+        renderItem={({ item }) => (
+          <View style={st.card}>
+            <Text style={st.cardMeta}>{fmtDateTime(item.created_at)}</Text>
+            <Text style={st.cardText}>{item.suggestion}</Text>
+          </View>
+        )}
+        ListEmptyComponent={
+          loading ? null : (
+            <View style={st.emptyWrap}>
+              <Ionicons name="sparkles-outline" size={40} color={C.muted} />
+              <Text style={st.emptyText}>Tap "Analyze My Data" to get personalized suggestions based on your attendance and schedule.</Text>
+            </View>
+          )
+        }
+      />
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 20, paddingBottom: 8 },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  analyzeBtn: {
+    backgroundColor: C.accent, borderRadius: 999,
+    marginHorizontal: 16, marginVertical: 16,
+    padding: 14, alignItems: 'center',
+  },
+  analyzeBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  analyzeBtnText: { color: '#0b0c10', fontWeight: '700', fontSize: 15 },
+});
+
+const st = StyleSheet.create({
+  list: { paddingHorizontal: 16, paddingBottom: 40 },
+  card: {
+    backgroundColor: C.card, borderRadius: 14,
+    padding: 16, marginBottom: 12,
+  },
+  cardMeta: { fontSize: 11, color: C.muted, marginBottom: 8 },
+  cardText: { fontSize: 14, color: C.text, lineHeight: 22 },
+  emptyWrap: { alignItems: 'center', marginTop: 60, paddingHorizontal: 32 },
+  emptyText: { textAlign: 'center', color: C.muted, marginTop: 16, fontSize: 14, lineHeight: 22 },
+});
+```
+
+- [ ] **Step 5: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add supabase/functions/ai-suggest/ src/db/aiSuggestions.ts app/ai/
+git commit -m "feat: AI analysis screen with Gemini Flash edge function, stores suggestions history"
+```
+
+---
+
+### Task 19: Messages — Inbox + Chat Screen
+
+**Files:**
+- Create: `src/db/messages.ts`
+- Create: `app/messages/_layout.tsx`
+- Create: `app/messages/index.tsx`
+- Create: `app/messages/[conversationId].tsx`
+
+> **Migration:** Run in Supabase SQL Editor before testing:
+>
+> ```sql
+> create table conversations (
+>   id uuid primary key default gen_random_uuid(),
+>   participant_a uuid references auth.users(id) on delete cascade not null,
+>   participant_b uuid references auth.users(id) on delete cascade not null,
+>   last_message text,
+>   last_message_at timestamptz,
+>   created_at timestamptz default now(),
+>   unique (participant_a, participant_b)
+> );
+> alter table conversations enable row level security;
+> create policy "Participants read own conversations"
+>   on conversations for select
+>   using (auth.uid() = participant_a or auth.uid() = participant_b);
+> create policy "Participants update own conversations"
+>   on conversations for update
+>   using (auth.uid() = participant_a or auth.uid() = participant_b);
+> create policy "Authenticated users create conversations"
+>   on conversations for insert with check (auth.uid() = participant_a);
+>
+> create table messages (
+>   id uuid primary key default gen_random_uuid(),
+>   conversation_id uuid references conversations(id) on delete cascade not null,
+>   sender_id uuid references auth.users(id) on delete cascade not null,
+>   body text not null,
+>   created_at timestamptz default now()
+> );
+> alter table messages enable row level security;
+> create policy "Participants read messages"
+>   on messages for select
+>   using (
+>     exists (
+>       select 1 from conversations c
+>       where c.id = conversation_id
+>         and (c.participant_a = auth.uid() or c.participant_b = auth.uid())
+>     )
+>   );
+> create policy "Participants send messages"
+>   on messages for insert
+>   with check (
+>     auth.uid() = sender_id and
+>     exists (
+>       select 1 from conversations c
+>       where c.id = conversation_id
+>         and (c.participant_a = auth.uid() or c.participant_b = auth.uid())
+>     )
+>   );
+>
+> -- Helper: get or create a conversation between two users
+> create or replace function get_or_create_conversation(other_user_id uuid)
+> returns uuid language plpgsql security definer as $$
+> declare
+>   me uuid := auth.uid();
+>   a uuid := least(me, other_user_id);
+>   b uuid := greatest(me, other_user_id);
+>   conv_id uuid;
+> begin
+>   select id into conv_id from conversations
+>   where participant_a = a and participant_b = b;
+>   if conv_id is null then
+>     insert into conversations (participant_a, participant_b)
+>     values (a, b) returning id into conv_id;
+>   end if;
+>   return conv_id;
+> end;
+> $$;
+> ```
+
+- [ ] **Step 1: Create `src/db/messages.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+import type { Profile } from '../types';
+
+export type Conversation = {
+  id: string;
+  participant_a: string;
+  participant_b: string;
+  last_message: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  other_profile?: Profile;
+};
+
+export type Message = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+};
+
+export async function getConversations(userId: string): Promise<Conversation[]> {
+  const { data } = await supabase
+    .from('conversations')
+    .select('*')
+    .or(`participant_a.eq.${userId},participant_b.eq.${userId}`)
+    .order('last_message_at', { ascending: false, nullsFirst: false });
+  return data ?? [];
+}
+
+export async function getOrCreateConversation(otherUserId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('get_or_create_conversation', {
+    other_user_id: otherUserId,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function getMessages(conversationId: string): Promise<Message[]> {
+  const { data } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+  return data ?? [];
+}
+
+export async function sendMessage(
+  conversationId: string,
+  senderId: string,
+  body: string,
+): Promise<Message> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({ conversation_id: conversationId, sender_id: senderId, body })
+    .select()
+    .single();
+  if (error) throw error;
+
+  await supabase
+    .from('conversations')
+    .update({ last_message: body, last_message_at: new Date().toISOString() })
+    .eq('id', conversationId);
+
+  return data as Message;
+}
+
+export async function searchProfiles(query: string): Promise<Profile[]> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, full_name, roll_number, department, semester')
+    .ilike('full_name', `%${query}%`)
+    .limit(15);
+  return (data ?? []) as Profile[];
+}
+```
+
+- [ ] **Step 2: Create `app/messages/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function MessagesLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 3: Create `app/messages/index.tsx`**
+
+```typescript
+import { useCallback, useState } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, Modal,
+  TextInput, StyleSheet, ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { getConversations, searchProfiles, getOrCreateConversation, type Conversation } from '../../src/db/messages';
+import type { Profile } from '../../src/types';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98',
+};
+
+const MONTH = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtTime(iso: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return `${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+  }
+  return `${d.getDate()} ${MONTH[d.getMonth()]}`;
+}
+
+export default function InboxScreen() {
+  const { profile } = useAuthStore();
+  const [convos, setConvos] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Profile[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [opening, setOpening] = useState<string | null>(null);
+
+  async function load() {
+    if (!profile) return;
+    setLoading(true);
+    const data = await getConversations(profile.id);
+    setConvos(data);
+    setLoading(false);
+  }
+
+  useFocusEffect(useCallback(() => { load(); }, []));
+
+  async function handleSearch(text: string) {
+    setQuery(text);
+    if (!text.trim()) { setResults([]); return; }
+    setSearching(true);
+    setResults(await searchProfiles(text.trim()));
+    setSearching(false);
+  }
+
+  async function openConversation(otherUserId: string) {
+    setOpening(otherUserId);
+    try {
+      const convId = await getOrCreateConversation(otherUserId);
+      setShowSearch(false);
+      setQuery('');
+      setResults([]);
+      router.push(`/messages/${convId}`);
+    } catch {
+      // ignore
+    }
+    setOpening(null);
+  }
+
+  function otherParticipant(conv: Conversation): string {
+    return conv.participant_a === profile?.id ? conv.participant_b : conv.participant_a;
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title}>Messages</Text>
+      </View>
+
+      <FlatList
+        data={convos}
+        keyExtractor={c => c.id}
+        contentContainerStyle={s.list}
+        refreshing={loading}
+        onRefresh={load}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={s.convoRow}
+            onPress={() => router.push(`/messages/${item.id}`)}
+            accessibilityLabel="Open conversation"
+          >
+            <View style={s.avatar}>
+              <Ionicons name="person-outline" size={20} color={C.muted} />
+            </View>
+            <View style={s.convoInfo}>
+              <Text style={s.convoName} numberOfLines={1}>
+                {otherParticipant(item)}
+              </Text>
+              <Text style={s.convoLast} numberOfLines={1}>
+                {item.last_message ?? 'No messages yet'}
+              </Text>
+            </View>
+            <Text style={s.convoTime}>{fmtTime(item.last_message_at)}</Text>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          loading ? null : (
+            <Text style={s.emptyText}>No conversations yet. Tap + to message someone.</Text>
+          )
+        }
+      />
+
+      <TouchableOpacity
+        style={s.fab}
+        onPress={() => setShowSearch(true)}
+        accessibilityLabel="New message"
+      >
+        <Ionicons name="create-outline" size={22} color="#0b0c10" />
+      </TouchableOpacity>
+
+      <Modal visible={showSearch} animationType="slide" transparent onRequestClose={() => setShowSearch(false)}>
+        <View style={s.modalWrap}>
+          <View style={s.sheet}>
+            <Text style={s.sheetTitle}>New Message</Text>
+            <View style={s.searchRow}>
+              <Ionicons name="search-outline" size={16} color={C.muted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={s.searchInput}
+                placeholder="Search by name…"
+                placeholderTextColor={C.muted}
+                value={query}
+                onChangeText={handleSearch}
+                autoFocus
+              />
+              {searching && <ActivityIndicator size="small" color={C.muted} />}
+            </View>
+            <FlatList
+              data={results}
+              keyExtractor={p => p.id}
+              style={{ maxHeight: 300 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={s.resultRow}
+                  onPress={() => openConversation(item.id)}
+                  disabled={opening === item.id}
+                >
+                  <View style={s.avatar}>
+                    <Ionicons name="person-outline" size={18} color={C.muted} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.resultName}>{item.full_name}</Text>
+                    <Text style={s.resultSub}>{item.department} · S{item.semester}</Text>
+                  </View>
+                  {opening === item.id && <ActivityIndicator size="small" color={C.accent} />}
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity onPress={() => { setShowSearch(false); setQuery(''); setResults([]); }} style={s.cancelBtn}>
+              <Text style={s.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 20, paddingBottom: 8 },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  list: { paddingBottom: 100 },
+  convoRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#1a1b20',
+  },
+  avatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: C.card, alignItems: 'center', justifyContent: 'center',
+    marginRight: 12,
+  },
+  convoInfo: { flex: 1 },
+  convoName: { fontSize: 15, fontWeight: '600', color: C.text },
+  convoLast: { fontSize: 13, color: C.muted, marginTop: 2 },
+  convoTime: { fontSize: 11, color: C.muted },
+  emptyText: { textAlign: 'center', color: C.muted, marginTop: 48, fontSize: 14 },
+  fab: {
+    position: 'absolute', bottom: 24, right: 24,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center',
+    elevation: 4,
+  },
+  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 12 },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 16 },
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.bg, borderRadius: 10,
+    paddingHorizontal: 12, marginBottom: 12,
+  },
+  searchInput: { flex: 1, paddingVertical: 12, color: C.text, fontSize: 14 },
+  resultRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1b20',
+  },
+  resultName: { fontSize: 14, fontWeight: '600', color: C.text },
+  resultSub: { fontSize: 12, color: C.muted, marginTop: 2 },
+  cancelBtn: { alignItems: 'center', padding: 12, marginTop: 8 },
+  cancelText: { color: C.muted, fontSize: 14 },
+});
+```
+
+- [ ] **Step 4: Create `app/messages/[conversationId].tsx`**
+
+```typescript
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, TextInput,
+  StyleSheet, KeyboardAvoidingView, Platform,
+} from 'react-native';
+import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { getMessages, sendMessage, type Message } from '../../src/db/messages';
+import { supabase } from '../../src/lib/supabase';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98',
+};
+
+export default function ChatScreen() {
+  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  const { profile } = useAuthStore();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const listRef = useRef<FlatList>(null);
+
+  async function load() {
+    const data = await getMessages(conversationId);
+    setMessages(data);
+  }
+
+  useFocusEffect(useCallback(() => { load(); }, [conversationId]));
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`messages:${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const msg = payload.new as Message;
+          setMessages(prev => {
+            if (prev.some(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100);
+    }
+  }, [messages.length]);
+
+  async function handleSend() {
+    const body = draft.trim();
+    if (!body || !profile) return;
+    setDraft('');
+    setSending(true);
+    try {
+      await sendMessage(conversationId, profile.id, body);
+    } catch {
+      setDraft(body);
+    }
+    setSending(false);
+  }
+
+  function isMine(msg: Message) {
+    return msg.sender_id === profile?.id;
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={s.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
+    >
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title} numberOfLines={1}>Chat</Text>
+      </View>
+
+      <FlatList
+        ref={listRef}
+        data={messages}
+        keyExtractor={m => m.id}
+        contentContainerStyle={s.list}
+        renderItem={({ item }) => {
+          const mine = isMine(item);
+          return (
+            <View style={[s.bubbleWrap, mine && s.bubbleWrapMine]}>
+              <View style={[s.bubble, mine ? s.bubbleMine : s.bubbleTheirs]}>
+                <Text style={[s.bubbleText, mine && s.bubbleTextMine]}>
+                  {item.body}
+                </Text>
+              </View>
+            </View>
+          );
+        }}
+      />
+
+      <View style={s.inputRow}>
+        <TextInput
+          style={s.input}
+          placeholder="Message…"
+          placeholderTextColor={C.muted}
+          value={draft}
+          onChangeText={setDraft}
+          multiline
+          returnKeyType="send"
+          blurOnSubmit={false}
+          onSubmitEditing={handleSend}
+        />
+        <TouchableOpacity
+          style={[s.sendBtn, (!draft.trim() || sending) && { opacity: 0.4 }]}
+          onPress={handleSend}
+          disabled={!draft.trim() || sending}
+          accessibilityLabel="Send message"
+        >
+          <Ionicons name="send" size={18} color="#0b0c10" />
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 20, paddingBottom: 12 },
+  backBtn: { padding: 4 },
+  title: { fontSize: 18, fontWeight: '700', color: C.text, flex: 1 },
+  list: { paddingHorizontal: 16, paddingVertical: 12 },
+  bubbleWrap: { marginBottom: 8, alignItems: 'flex-start' },
+  bubbleWrapMine: { alignItems: 'flex-end' },
+  bubble: {
+    maxWidth: '75%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: C.card,
+  },
+  bubbleMine: { backgroundColor: C.accent, borderBottomRightRadius: 4 },
+  bubbleTheirs: { borderBottomLeftRadius: 4 },
+  bubbleText: { fontSize: 14, color: C.text, lineHeight: 20 },
+  bubbleTextMine: { color: '#0b0c10' },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderTopWidth: 1, borderTopColor: '#1a1b20',
+    backgroundColor: C.bg,
+  },
+  input: {
+    flex: 1, backgroundColor: C.card, borderRadius: 20,
+    paddingHorizontal: 16, paddingVertical: 10,
+    color: C.text, fontSize: 14, maxHeight: 120, marginRight: 8,
+  },
+  sendBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center',
+  },
+});
+```
+
+- [ ] **Step 5: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/db/messages.ts app/messages/
+git commit -m "feat: messages inbox and realtime chat screen with Supabase Realtime"
+```
+
+---
+
+### Task 20: Settings Screen
+
+**Files:**
+- Create: `app/settings/_layout.tsx`
+- Create: `app/settings/index.tsx`
+
+- [ ] **Step 1: Create `app/settings/_layout.tsx`**
+
+```typescript
+import { Stack } from 'expo-router';
+export default function SettingsLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+```
+
+- [ ] **Step 2: Create `app/settings/index.tsx`**
+
+```typescript
+import { useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ScrollView, Alert, ActivityIndicator, Switch,
+} from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../src/stores/authStore';
+import { supabase } from '../../src/lib/supabase';
+
+const C = {
+  bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
+  text: '#eaeaea', muted: '#8a8f98', danger: '#ff5c5c',
+};
+
+const MESS_OPTIONS = ['North Mess', 'South Mess', 'New Mess'];
+
+export default function SettingsScreen() {
+  const { profile, setProfile, signOut } = useAuthStore();
+
+  const [fullName, setFullName] = useState(profile?.full_name ?? '');
+  const [department, setDepartment] = useState(profile?.department ?? '');
+  const [semester, setSemester] = useState(String(profile?.semester ?? ''));
+  const [rollNumber, setRollNumber] = useState(profile?.roll_number ?? '');
+  const [messName, setMessName] = useState(profile?.mess_name ?? MESS_OPTIONS[0]);
+  const [semesterEndDate, setSemesterEndDate] = useState(profile?.semester_end_date ?? '');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    const semNum = parseInt(semester, 10);
+    if (!fullName.trim() || !department.trim() || isNaN(semNum)) {
+      Alert.alert('Invalid input', 'Name, department, and semester are required.');
+      return;
+    }
+    if (semesterEndDate && !/^\d{4}-\d{2}-\d{2}$/.test(semesterEndDate)) {
+      Alert.alert('Invalid date', 'Semester end date must be in YYYY-MM-DD format.');
+      return;
+    }
+    setSaving(true);
+    const updates = {
+      full_name: fullName.trim(),
+      department: department.trim(),
+      semester: semNum,
+      roll_number: rollNumber.trim() || null,
+      mess_name: messName,
+      semester_end_date: semesterEndDate.trim() || null,
+    };
+    const { error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', profile!.id);
+    setSaving(false);
+    if (error) {
+      Alert.alert('Save failed', error.message);
+      return;
+    }
+    setProfile({ ...profile!, ...updates });
+    Alert.alert('Saved', 'Your profile has been updated.');
+  }
+
+  async function handleSignOut() {
+    Alert.alert('Sign out?', 'You will need to verify your email again to sign back in.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out', style: 'destructive',
+        onPress: async () => {
+          await signOut();
+          router.replace('/');
+        },
+      },
+    ]);
+  }
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+        <Text style={s.title}>Settings</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+
+        <Text style={s.sectionLabel}>Profile</Text>
+        <View style={s.group}>
+          <View style={s.fieldRow}>
+            <Text style={s.fieldLabel}>Full Name</Text>
+            <TextInput
+              style={s.fieldInput}
+              value={fullName}
+              onChangeText={setFullName}
+              placeholderTextColor={C.muted}
+              placeholder="Your name"
+              maxLength={80}
+            />
+          </View>
+          <View style={s.divider} />
+          <View style={s.fieldRow}>
+            <Text style={s.fieldLabel}>Roll Number</Text>
+            <TextInput
+              style={s.fieldInput}
+              value={rollNumber}
+              onChangeText={setRollNumber}
+              placeholderTextColor={C.muted}
+              placeholder="e.g. B220001CS"
+              autoCapitalize="characters"
+              maxLength={20}
+            />
+          </View>
+          <View style={s.divider} />
+          <View style={s.fieldRow}>
+            <Text style={s.fieldLabel}>Department</Text>
+            <TextInput
+              style={s.fieldInput}
+              value={department}
+              onChangeText={setDepartment}
+              placeholderTextColor={C.muted}
+              placeholder="e.g. CSE"
+              autoCapitalize="characters"
+              maxLength={20}
+            />
+          </View>
+          <View style={s.divider} />
+          <View style={s.fieldRow}>
+            <Text style={s.fieldLabel}>Semester</Text>
+            <TextInput
+              style={s.fieldInput}
+              value={semester}
+              onChangeText={setSemester}
+              placeholderTextColor={C.muted}
+              placeholder="e.g. 4"
+              keyboardType="number-pad"
+              maxLength={2}
+            />
+          </View>
+        </View>
+
+        <Text style={s.sectionLabel}>Campus</Text>
+        <View style={s.group}>
+          <Text style={[s.fieldLabel, { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }]}>Mess</Text>
+          {MESS_OPTIONS.map(opt => (
+            <TouchableOpacity
+              key={opt}
+              style={s.messRow}
+              onPress={() => setMessName(opt)}
+              accessibilityLabel={`Select ${opt}`}
+            >
+              <Text style={[s.messLabel, messName === opt && { color: C.accent }]}>{opt}</Text>
+              {messName === opt && <Ionicons name="checkmark" size={18} color={C.accent} />}
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={s.sectionLabel}>Academic Calendar</Text>
+        <View style={s.group}>
+          <View style={s.fieldRow}>
+            <Text style={s.fieldLabel}>Semester End Date</Text>
+            <TextInput
+              style={s.fieldInput}
+              value={semesterEndDate}
+              onChangeText={setSemesterEndDate}
+              placeholderTextColor={C.muted}
+              placeholder="YYYY-MM-DD"
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
+            />
+          </View>
+          <Text style={s.hint}>Used by the AI and attendance engine to compute urgency.</Text>
+        </View>
+
+        <TouchableOpacity
+          style={[s.saveBtn, saving && { opacity: 0.6 }]}
+          onPress={handleSave}
+          disabled={saving}
+          accessibilityLabel="Save settings"
+        >
+          {saving
+            ? <ActivityIndicator color="#0b0c10" />
+            : <Text style={s.saveBtnText}>Save Changes</Text>}
+        </TouchableOpacity>
+
+        <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut} accessibilityLabel="Sign out">
+          <Ionicons name="log-out-outline" size={18} color={C.danger} />
+          <Text style={s.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+
+        <Text style={s.emailNote}>Signed in as {profile?.email}</Text>
+      </ScrollView>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 20, paddingBottom: 8 },
+  backBtn: { padding: 4 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text },
+  scroll: { paddingHorizontal: 16, paddingBottom: 60 },
+  sectionLabel: {
+    fontSize: 12, color: C.muted, textTransform: 'uppercase',
+    letterSpacing: 1, marginTop: 24, marginBottom: 8, marginLeft: 4,
+  },
+  group: { backgroundColor: C.card, borderRadius: 14, overflow: 'hidden' },
+  fieldRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 4,
+  },
+  fieldLabel: { fontSize: 14, color: C.text, flex: 1 },
+  fieldInput: {
+    flex: 2, textAlign: 'right', color: C.text,
+    fontSize: 14, paddingVertical: 14,
+  },
+  divider: { height: 1, backgroundColor: '#1a1b20', marginHorizontal: 16 },
+  messRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderTopWidth: 1, borderTopColor: '#1a1b20',
+  },
+  messLabel: { fontSize: 14, color: C.muted },
+  hint: { fontSize: 12, color: C.muted, paddingHorizontal: 16, paddingBottom: 12 },
+  saveBtn: {
+    backgroundColor: C.accent, borderRadius: 999,
+    padding: 14, alignItems: 'center', marginTop: 28,
+  },
+  saveBtnText: { color: '#0b0c10', fontWeight: '700', fontSize: 15 },
+  signOutBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, marginTop: 16, padding: 14,
+    backgroundColor: C.card, borderRadius: 999,
+  },
+  signOutText: { color: C.danger, fontWeight: '600', fontSize: 15 },
+  emailNote: { textAlign: 'center', color: C.muted, fontSize: 12, marginTop: 20 },
+});
+```
+
+- [ ] **Step 3: Wire sign-out into `useAuthStore`**
+
+Open `src/stores/authStore.ts` and ensure the store exposes a `signOut` action that calls `supabase.auth.signOut()` and clears the profile:
+
+```typescript
+signOut: async () => {
+  await supabase.auth.signOut();
+  set({ profile: null, session: null });
+},
+```
+
+If `signOut` is already present, skip this step.
+
+- [ ] **Step 4: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/settings/
+git commit -m "feat: settings screen — edit profile, mess selector, semester end date, sign out"
+```
+
+---
+
+### Task 21: Mess Admin Edge Function + Mess DB Layer
+
+**Files:**
+- Create: `supabase/functions/mess-admin/index.ts`
+- Create: `src/db/mess.ts`
+
+> **Migration:** Run in Supabase SQL Editor before testing:
+>
+> ```sql
+> -- Add is_admin flag to profiles if not present
+> alter table profiles add column if not exists is_admin boolean default false;
+>
+> create table if not exists mess_cycles (
+>   id uuid primary key default gen_random_uuid(),
+>   mess_name text not null,
+>   cycle_length int not null check (cycle_length > 0),
+>   cycle_start_date date not null,
+>   active boolean default true,
+>   created_at timestamptz default now()
+> );
+>
+> create table if not exists mess_meals (
+>   id uuid primary key default gen_random_uuid(),
+>   cycle_id uuid references mess_cycles(id) on delete cascade not null,
+>   day_number int not null check (day_number >= 1),
+>   meal_type text not null check (meal_type in ('breakfast', 'lunch', 'snacks', 'dinner')),
+>   items text[] not null default '{}',
+>   unique (cycle_id, day_number, meal_type)
+> );
+>
+> alter table mess_cycles enable row level security;
+> alter table mess_meals enable row level security;
+>
+> create policy "Public read mess cycles" on mess_cycles for select using (true);
+> create policy "Public read mess meals" on mess_meals for select using (true);
+> ```
+>
+> **Grant admin:** `update profiles set is_admin = true where email = '<admin-email>';`
+
+- [ ] **Step 1: Create `supabase/functions/mess-admin/index.ts`**
+
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+type UpsertCycleBody = {
+  action: 'upsert_cycle';
+  mess_name: string;
+  cycle_length: number;
+  cycle_start_date: string; // YYYY-MM-DD
+  meals: Array<{
+    day_number: number;
+    meal_type: 'breakfast' | 'lunch' | 'snacks' | 'dinner';
+    items: string[];
+  }>;
+};
+
+type DeactivateBody = {
+  action: 'deactivate_cycle';
+  cycle_id: string;
+};
+
+type Body = UpsertCycleBody | DeactivateBody;
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: 'Missing authorization' }), { status: 401, headers: CORS });
+  }
+
+  // Verify caller is admin
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user }, error: authError } = await userClient.auth.getUser();
+  if (authError || !user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  }
+
+  const db = createClient(SUPABASE_URL, SERVICE_KEY);
+  const { data: profile } = await db
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile?.is_admin) {
+    return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), { status: 403, headers: CORS });
+  }
+
+  const body = await req.json() as Body;
+
+  if (body.action === 'deactivate_cycle') {
+    await db.from('mess_cycles').update({ active: false }).eq('id', body.cycle_id);
+    return new Response(JSON.stringify({ ok: true }), { headers: CORS });
+  }
+
+  if (body.action === 'upsert_cycle') {
+    const { mess_name, cycle_length, cycle_start_date, meals } = body;
+
+    // Deactivate existing active cycles for this mess
+    await db.from('mess_cycles')
+      .update({ active: false })
+      .eq('mess_name', mess_name)
+      .eq('active', true);
+
+    // Insert new cycle
+    const { data: cycle, error: cycleErr } = await db
+      .from('mess_cycles')
+      .insert({ mess_name, cycle_length, cycle_start_date, active: true })
+      .select('id')
+      .single();
+
+    if (cycleErr || !cycle) {
+      return new Response(JSON.stringify({ error: cycleErr?.message ?? 'Insert failed' }), { status: 500, headers: CORS });
+    }
+
+    // Insert meals
+    const mealRows = meals.map(m => ({
+      cycle_id: cycle.id,
+      day_number: m.day_number,
+      meal_type: m.meal_type,
+      items: m.items,
+    }));
+
+    const { error: mealsErr } = await db.from('mess_meals').insert(mealRows);
+    if (mealsErr) {
+      return new Response(JSON.stringify({ error: mealsErr.message }), { status: 500, headers: CORS });
+    }
+
+    return new Response(JSON.stringify({ ok: true, cycle_id: cycle.id }), { headers: CORS });
+  }
+
+  return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: CORS });
+});
+```
+
+- [ ] **Step 2: Create `src/db/mess.ts`**
+
+```typescript
+import { supabase } from '../lib/supabase';
+
+export type MessMeal = {
+  meal_type: 'breakfast' | 'lunch' | 'snacks' | 'dinner';
+  items: string[];
+};
+
+export type TodayMenu = {
+  mess_name: string;
+  day_number: number;
+  meals: MessMeal[];
+};
+
+function cycleDayNumber(cycleStartDate: string, cycleLength: number): number {
+  const start = new Date(cycleStartDate);
+  const today = new Date();
+  // Zero out time so we compare calendar days only
+  start.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  return (((diff % cycleLength) + cycleLength) % cycleLength) + 1;
+}
+
+export async function getTodayMenu(messName: string): Promise<TodayMenu | null> {
+  const { data: cycle } = await supabase
+    .from('mess_cycles')
+    .select('id, cycle_length, cycle_start_date')
+    .eq('mess_name', messName)
+    .eq('active', true)
+    .single();
+
+  if (!cycle) return null;
+
+  const dayNumber = cycleDayNumber(cycle.cycle_start_date, cycle.cycle_length);
+
+  const { data: meals } = await supabase
+    .from('mess_meals')
+    .select('meal_type, items')
+    .eq('cycle_id', cycle.id)
+    .eq('day_number', dayNumber)
+    .order('meal_type');
+
+  return {
+    mess_name: messName,
+    day_number: dayNumber,
+    meals: (meals ?? []) as MessMeal[],
+  };
+}
+
+export async function callMessAdmin(body: {
+  action: 'upsert_cycle';
+  mess_name: string;
+  cycle_length: number;
+  cycle_start_date: string;
+  meals: Array<{ day_number: number; meal_type: string; items: string[] }>;
+}): Promise<void> {
+  const { error } = await supabase.functions.invoke('mess-admin', { body });
+  if (error) throw error;
+}
+```
+
+- [ ] **Step 3: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add supabase/functions/mess-admin/ src/db/mess.ts
+git commit -m "feat: mess-admin edge function for cycle upload, mess DB layer with cycle-day computation"
+```
+
+---
+
+### Task 22: Notifications — Daily Reminder
+
+**Files:**
+- Modify: `src/engine/notifications.ts`
+- Create: `src/hooks/useNotifications.ts`
+- Modify: `app/_layout.tsx`
+
+- [ ] **Step 1: Replace `src/engine/notifications.ts`**
+
+Open the file and replace its entire contents with:
+
+```typescript
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status === 'granted') return true;
+  const { status: asked } = await Notifications.requestPermissionsAsync();
+  return asked === 'granted';
+}
+
+export async function scheduleDailyReminder(
+  hour: number,
+  minute: number,
+  title: string,
+  body: string,
+): Promise<void> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(
+    scheduled
+      .filter(n => n.content.data?.type === 'daily_reminder')
+      .map(n => Notifications.cancelScheduledNotificationAsync(n.identifier)),
+  );
+
+  await Notifications.scheduleNotificationAsync({
+    content: { title, body, data: { type: 'daily_reminder' } },
+    trigger: { hour, minute, repeats: true } as Notifications.DailyTriggerInput,
+  });
+}
+
+export async function cancelAllReminders(): Promise<void> {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+}
+```
+
+- [ ] **Step 2: Create `src/hooks/useNotifications.ts`**
+
+```typescript
+import { useEffect } from 'react';
+import { AppState } from 'react-native';
+import { useAuthStore } from '../stores/authStore';
+import { requestNotificationPermission, scheduleDailyReminder } from '../engine/notifications';
+import { supabase } from '../lib/supabase';
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+async function buildReminderContent(userId: string): Promise<{ title: string; body: string }> {
+  const today = DAYS[new Date().getDay()];
+
+  // Today's first class
+  const { data: slots } = await supabase
+    .from('user_timetable')
+    .select('subject_name, timetable_slots(start_time, end_time, day)')
+    .eq('user_id', userId);
+
+  const todaySlots = (slots ?? [])
+    .filter((s: any) => s.timetable_slots?.day === today)
+    .sort((a: any, b: any) =>
+      (a.timetable_slots?.start_time ?? '').localeCompare(b.timetable_slots?.start_time ?? ''),
+    );
+
+  // Attendance at-risk subjects (< 75% in last 90 days)
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const { data: records } = await supabase
+    .from('attendance_records')
+    .select('slot_id, status')
+    .eq('user_id', userId)
+    .gte('date', since);
+
+  const subjectTotals: Record<string, { present: number; total: number; name: string }> = {};
+  for (const slot of (slots ?? [])) {
+    const name = (slot as any).subject_name as string;
+    if (!subjectTotals[name]) subjectTotals[name] = { present: 0, total: 0, name };
+  }
+  for (const slot of (slots ?? [])) {
+    const name = (slot as any).subject_name as string;
+    const slotId = (slot as any).slot_id ?? (slot as any).id;
+    const slotRecords = (records ?? []).filter((r: any) => r.slot_id === slotId);
+    if (subjectTotals[name]) {
+      subjectTotals[name].total += slotRecords.length;
+      subjectTotals[name].present += slotRecords.filter((r: any) => r.status === 'present').length;
+    }
+  }
+  const atRisk = Object.values(subjectTotals).filter(
+    s => s.total > 0 && s.present / s.total < 0.75,
+  );
+
+  let body: string;
+  if (todaySlots.length > 0) {
+    const first = todaySlots[0] as any;
+    body = `First class: ${first.subject_name} at ${first.timetable_slots?.start_time ?? ''}`;
+  } else {
+    body = 'No classes today. Good time to catch up!';
+  }
+
+  if (atRisk.length > 0) {
+    body += `\n⚠️ ${atRisk[0].name} attendance below 75%`;
+  }
+
+  return { title: 'Good morning! 👋', body };
+}
+
+export function useNotifications() {
+  const { profile } = useAuthStore();
+
+  async function refresh() {
+    if (!profile) return;
+    const granted = await requestNotificationPermission();
+    if (!granted) return;
+    try {
+      const { title, body } = await buildReminderContent(profile.id);
+      await scheduleDailyReminder(7, 0, title, body);
+    } catch {
+      // Notification scheduling is best-effort — never crash the app
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') refresh();
+    });
+    return () => sub.remove();
+  }, [profile?.id]);
+}
+```
+
+- [ ] **Step 3: Call the hook from `app/_layout.tsx`**
+
+Open `app/_layout.tsx`. Find the root layout component body and add the hook call after existing hook calls:
+
+```typescript
+// At the top of the file, add:
+import { useNotifications } from '../src/hooks/useNotifications';
+
+// Inside the root layout component, add one line:
+useNotifications();
+```
+
+The hook is side-effect only — it registers no UI, so placing it anywhere inside the component body is fine.
+
+- [ ] **Step 4: TypeScript check**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/engine/notifications.ts src/hooks/useNotifications.ts app/_layout.tsx
+git commit -m "feat: daily notification reminder with today's first class and attendance risk warning"
+```
+
+---
+
+### Task 23: Final Verification
+
+**Files:** None created. This task validates the full build.
+
+- [ ] **Step 1: TypeScript — zero errors**
+
+```bash
+cd /d/StudentOS && npx tsc --noEmit 2>&1
+```
+
+Expected: no output (zero errors). If errors appear, fix them before continuing.
+
+- [ ] **Step 2: Run the test suite**
+
+```bash
+cd /d/StudentOS && npx jest --passWithNoTests 2>&1 | tail -20
+```
+
+Expected: all tests pass, test suites pass. The prediction engine tests from Task 5 should all be green.
+
+- [ ] **Step 3: Verify all screen routes exist**
+
+```bash
+find /d/StudentOS/app -name "*.tsx" | sort
+```
+
+Expected output includes at minimum:
+```
+app/_layout.tsx
+app/index.tsx               (or app/(auth)/login.tsx — onboarding entry)
+app/(tabs)/_layout.tsx
+app/(tabs)/index.tsx        (Home dashboard)
+app/(tabs)/all.tsx          (All-features 3×3 grid)
+app/timetable/_layout.tsx
+app/timetable/index.tsx
+app/attendance/_layout.tsx
+app/attendance/index.tsx
+app/attendance/[subject].tsx
+app/feed/_layout.tsx
+app/feed/index.tsx
+app/wall/_layout.tsx
+app/wall/index.tsx
+app/notes/_layout.tsx
+app/notes/index.tsx
+app/gym/_layout.tsx
+app/gym/index.tsx
+app/ai/_layout.tsx
+app/ai/index.tsx
+app/messages/_layout.tsx
+app/messages/index.tsx
+app/messages/[conversationId].tsx
+app/settings/_layout.tsx
+app/settings/index.tsx
+```
+
+If any route file is missing, create a minimal stub:
+
+```typescript
+import { View, Text } from 'react-native';
+export default function StubScreen() {
+  return <View style={{ flex: 1, backgroundColor: '#0b0c10' }}><Text style={{ color: '#eaeaea', padding: 20 }}>Coming soon</Text></View>;
+}
+```
+
+- [ ] **Step 4: Verify Supabase Edge Functions exist**
+
+```bash
+find /d/StudentOS/supabase/functions -name "index.ts" | sort
+```
+
+Expected:
+```
+supabase/functions/ai-suggest/index.ts
+supabase/functions/mess-admin/index.ts
+```
+
+- [ ] **Step 5: Verify DB modules exist**
+
+```bash
+find /d/StudentOS/src/db -name "*.ts" | sort
+```
+
+Expected:
+```
+src/db/attendance.ts
+src/db/feed.ts
+src/db/gym.ts
+src/db/aiSuggestions.ts
+src/db/messages.ts
+src/db/mess.ts
+src/db/notes.ts
+src/db/timetable.ts
+src/db/wall.ts
+```
+
+- [ ] **Step 6: Review git log**
+
+```bash
+cd /d/StudentOS && git log --oneline | head -30
+```
+
+Expected: one commit per feature task. Confirm all tasks 1–22 have a corresponding commit.
+
+- [ ] **Step 7: Commit the completed plan**
+
+```bash
+cd /d/StudentOS && git add docs/superpowers/plans/2026-04-22-studentos-v2.md && git commit -m "docs: complete V2 implementation plan (23 tasks)"
+```
+
+---
+
+## Supabase Setup Checklist
+
+Before running the app, complete these steps in the Supabase dashboard:
+
+**SQL Editor — run all migrations in order:**
+1. `profiles` table (Task 2)
+2. `timetable_slots`, `user_timetable`, `attendance_records`, `academic_calendar` (Task 3)
+3. `feed_posts`, `wall_entries`, `notes` tables (Tasks 13–15)
+4. `gym_sessions` (Task 17)
+5. `ai_suggestions` (Task 18)
+6. `conversations`, `messages` (Task 19)
+7. `mess_cycles`, `mess_meals`, add `is_admin` to profiles (Task 21)
+8. `increment_download_count` RPC (Task 16 note)
+9. `get_or_create_conversation` function (Task 19 note)
+
+**Authentication:**
+- Enable Email (OTP / magic link) provider
+- Add allowed email domain restriction: `@nitc.ac.in`
+
+**Storage:**
+- Create bucket `notes`, set public = false
+- RLS: allow authenticated users to upload; allow `getSignedUrl` reads
+
+**Edge Function Secrets:**
+- `GEMINI_API_KEY` (for `ai-suggest`)
+
+**Realtime:**
+- Enable Realtime on tables: `messages`, `wall_entries`, `feed_posts`
+
+**Admin account:**
+- `update profiles set is_admin = true where email = '<your-admin-email>';`
