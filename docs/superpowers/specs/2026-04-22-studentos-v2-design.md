@@ -44,7 +44,7 @@ Supabase Edge Functions (Deno)
 |-------|-------------|
 | `timetable_slots` | `id`, `day_of_week`, `start_time`, `end_time`, `slot_number` |
 | `academic_calendar` | `id`, `date`, `type` (holiday \| day_change \| event), `description`, `substitute_day?` |
-| `messes` | `id`, `name` |
+| `messes` | `id`, `name`, `cycle_start_date`, `cycle_length` (number of days in rotation) |
 | `mess_menus` | `id`, `mess_id`, `day_cycle`, `meal` (breakfast \| lunch \| evening \| dinner), `items[]` |
 
 ### User data (RLS: user_id = auth.uid())
@@ -195,7 +195,7 @@ app/
 ### Mess
 - Shows user's registered mess name.
 - 4-meal rows: Breakfast, Lunch, Evening, Dinner — items from `mess_menus` for today's day cycle.
-- Day cycle calculated: `academic_calendar` checked first; if holiday, shows "No classes today"; otherwise uses a cycle counter from `profiles.semester_start_date`.
+- Day cycle calculated: `academic_calendar` checked first; if holiday, shows "No classes today"; otherwise computed as `((today - messes.cycle_start_date).days % messes.cycle_length) + 1`.
 
 ### Gym
 - Weekly calendar (Mon–Sun). Sessions shown as coloured blocks.
@@ -226,7 +226,7 @@ app/
 ### `ai-suggest`
 - **Auth:** requires valid Supabase JWT (authenticated users only)
 - **Input:** `{ subjects, attendance, todaySlots, freeGaps, feedEvents }`
-- **Action:** constructs a concise prompt, calls Gemini Flash (`gemini-1.5-flash`), parses JSON response
+- **Action:** constructs a concise prompt, calls Gemini Flash (`gemini-2.0-flash`), parses JSON response
 - **Output:** `{ suggestions: [{ icon, title, body }] }`
 
 ### `mess-admin`
