@@ -1986,3 +1986,422 @@ Expected: 0 errors.
 git add src/stores/subjectsStore.ts src/stores/timetableStore.ts
 git commit -m "feat: subjectsStore and timetableStore with Zustand"
 ```
+
+---
+
+### Task 9: Shared UI Components
+
+**Files:**
+- Create: `src/components/VerdictChip.tsx`
+- Create: `src/components/AttendanceBar.tsx`
+- Create: `src/components/ClassCard.tsx`
+- Create: `src/components/FeedCard.tsx`
+- Create: `src/components/WallCard.tsx`
+- Create: `src/components/NoteCard.tsx`
+- Create: `src/components/MealRow.tsx`
+- Create: `src/components/GymSessionCard.tsx`
+- Create: `src/components/SuggestionCard.tsx`
+- Create: `src/components/MessageBubble.tsx`
+
+Design rules applied:
+- `@expo/vector-icons` (Ionicons) for all icons — no emojis in functional UI
+- All pressable elements ≥ 44pt touch target
+- 8dp spacing rhythm throughout
+- Semantic color tokens via local `C` constant matching the spec palette
+- `accessibilityLabel` on all interactive elements
+
+- [ ] **Step 1: Create `src/components/VerdictChip.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+import type { Verdict } from '../engine/predictionEngine';
+
+const COLORS: Record<Verdict, { bg: string; text: string }> = {
+  safe: { bg: '#1a3a38', text: '#66fcf1' },
+  warning: { bg: '#3a2e10', text: '#ffc857' },
+  danger: { bg: '#3a1010', text: '#ff5c5c' },
+};
+
+interface Props {
+  verdict: Verdict;
+}
+
+export default function VerdictChip({ verdict }: Props) {
+  const c = COLORS[verdict];
+  return (
+    <View style={[styles.chip, { backgroundColor: c.bg }]}>
+      <Text style={[styles.label, { color: c.text }]}>{verdict}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  chip: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
+  label: { fontSize: 12, fontWeight: '600', textTransform: 'capitalize' },
+});
+```
+
+- [ ] **Step 2: Create `src/components/AttendanceBar.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+
+interface Props {
+  present: number;
+  total: number;
+  targetPct: number;
+}
+
+export default function AttendanceBar({ present, total, targetPct }: Props) {
+  const pct = total === 0 ? 0 : Math.round((present / total) * 1000) / 10;
+  const fill = total === 0 ? 0 : Math.min(pct / 100, 1);
+  const color = pct >= targetPct ? '#66fcf1' : pct >= targetPct - 5 ? '#ffc857' : '#ff5c5c';
+
+  return (
+    <View style={styles.wrapper} accessibilityLabel={`Attendance ${pct} percent`}>
+      <View style={styles.track}>
+        <View style={[styles.fill, { width: `${fill * 100}%` as any, backgroundColor: color }]} />
+      </View>
+      <Text style={[styles.label, { color }]}>{pct}%</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrapper: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  track: { flex: 1, height: 4, backgroundColor: '#1e2028', borderRadius: 2, overflow: 'hidden' },
+  fill: { height: '100%', borderRadius: 2 },
+  label: { fontSize: 13, fontWeight: '600', minWidth: 40, textAlign: 'right' },
+});
+```
+
+- [ ] **Step 3: Create `src/components/ClassCard.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+import type { TimetableSlot } from '../types';
+
+interface Props {
+  slot: TimetableSlot;
+  subjectName: string;
+  present: number;
+  total: number;
+  targetPct: number;
+}
+
+export default function ClassCard({ slot, subjectName, present, total, targetPct }: Props) {
+  const pct = total === 0 ? 0 : Math.round((present / total) * 1000) / 10;
+  const color = pct >= targetPct ? '#66fcf1' : pct >= targetPct - 5 ? '#ffc857' : '#ff5c5c';
+  const time = `${slot.start_time.slice(0, 5)} – ${slot.end_time.slice(0, 5)}`;
+
+  return (
+    <View style={styles.row} accessibilityLabel={`${subjectName} at ${time}, attendance ${pct} percent`}>
+      <View style={styles.left}>
+        <Text style={styles.time}>{time}</Text>
+        <Text style={styles.subject} numberOfLines={1}>{subjectName}</Text>
+      </View>
+      <Text style={[styles.pct, { color }]}>{pct}%</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#111217', borderRadius: 10, marginBottom: 8 },
+  left: { flex: 1, gap: 2 },
+  time: { fontSize: 11, color: '#8a8f98' },
+  subject: { fontSize: 15, color: '#eaeaea', fontWeight: '500' },
+  pct: { fontSize: 15, fontWeight: '700', marginLeft: 12 },
+});
+```
+
+- [ ] **Step 4: Create `src/components/FeedCard.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import type { FeedPost } from '../types';
+
+interface Props {
+  post: FeedPost;
+}
+
+function timeRemaining(expiresAt: string): string {
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return 'expired';
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `${h}h left` : `${m}m left`;
+}
+
+export default function FeedCard({ post }: Props) {
+  return (
+    <View style={styles.card} accessibilityLabel={`Feed post: ${post.title}`}>
+      <View style={styles.header}>
+        <Text style={styles.title} numberOfLines={2}>{post.title}</Text>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{timeRemaining(post.expires_at)}</Text>
+        </View>
+      </View>
+      <Text style={styles.body} numberOfLines={4}>{post.body}</Text>
+      <View style={styles.footer}>
+        {post.location ? (
+          <View style={styles.meta}>
+            <Ionicons name="location-outline" size={12} color="#8a8f98" />
+            <Text style={styles.metaText}>{post.location}</Text>
+          </View>
+        ) : null}
+        <Text style={styles.author}>{(post as any).profiles?.name ?? ''}</Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: { backgroundColor: '#111217', borderRadius: 12, padding: 16, marginBottom: 12 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
+  title: { flex: 1, fontSize: 15, fontWeight: '600', color: '#eaeaea' },
+  badge: { backgroundColor: '#1e2028', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  badgeText: { fontSize: 11, color: '#8a8f98' },
+  body: { fontSize: 13, color: '#8a8f98', lineHeight: 19, marginBottom: 12 },
+  footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 12, color: '#8a8f98' },
+  author: { fontSize: 12, color: '#66fcf1' },
+});
+```
+
+- [ ] **Step 5: Create `src/components/WallCard.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+import type { WallEntry } from '../types';
+
+interface Props {
+  entry: WallEntry;
+}
+
+function timeAgo(createdAt: string): string {
+  const ms = Date.now() - new Date(createdAt).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+export default function WallCard({ entry }: Props) {
+  return (
+    <View style={[styles.card, { borderLeftColor: entry.color, borderLeftWidth: 3 }]} accessibilityLabel={`Wall entry: ${entry.content}`}>
+      <Text style={styles.content}>{entry.content}</Text>
+      <Text style={styles.time}>{timeAgo(entry.created_at)}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: { backgroundColor: '#111217', borderRadius: 12, padding: 16, marginBottom: 10 },
+  content: { fontSize: 14, color: '#eaeaea', lineHeight: 20, marginBottom: 8 },
+  time: { fontSize: 11, color: '#8a8f98' },
+});
+```
+
+- [ ] **Step 6: Create `src/components/NoteCard.tsx`**
+
+```typescript
+import { Pressable, View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import type { Note } from '../types';
+
+interface Props {
+  note: Note;
+  onPress: () => void;
+}
+
+export default function NoteCard({ note, onPress }: Props) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+      onPress={onPress}
+      accessibilityLabel={`Note: ${note.title}, ${note.download_count} downloads`}
+      accessibilityRole="button"
+    >
+      <View style={styles.iconWrap}>
+        <Ionicons name="document-text-outline" size={22} color="#66fcf1" />
+      </View>
+      <View style={styles.body}>
+        <Text style={styles.title} numberOfLines={1}>{note.title}</Text>
+        <Text style={styles.sub}>{note.subject_name} · Sem {note.semester}</Text>
+      </View>
+      <View style={styles.right}>
+        <Ionicons name="download-outline" size={14} color="#8a8f98" />
+        <Text style={styles.count}>{note.download_count}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111217', borderRadius: 12, padding: 14, marginBottom: 8, gap: 12 },
+  pressed: { opacity: 0.7 },
+  iconWrap: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#1a3a38', alignItems: 'center', justifyContent: 'center' },
+  body: { flex: 1, gap: 3 },
+  title: { fontSize: 14, fontWeight: '500', color: '#eaeaea' },
+  sub: { fontSize: 12, color: '#8a8f98' },
+  right: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  count: { fontSize: 12, color: '#8a8f98' },
+});
+```
+
+- [ ] **Step 7: Create `src/components/MealRow.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+
+interface Props {
+  meal: string;
+  items: string[];
+}
+
+const MEAL_ICONS: Record<string, string> = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  evening: 'Evening',
+  dinner: 'Dinner',
+};
+
+export default function MealRow({ meal, items }: Props) {
+  return (
+    <View style={styles.row} accessibilityLabel={`${meal}: ${items.join(', ')}`}>
+      <Text style={styles.label}>{MEAL_ICONS[meal] ?? meal}</Text>
+      <Text style={styles.items} numberOfLines={2}>
+        {items.length > 0 ? items.join(', ') : '—'}
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1b20', gap: 16, alignItems: 'flex-start' },
+  label: { width: 72, fontSize: 13, color: '#8a8f98', fontWeight: '500' },
+  items: { flex: 1, fontSize: 13, color: '#eaeaea', lineHeight: 18 },
+});
+```
+
+- [ ] **Step 8: Create `src/components/GymSessionCard.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+import type { GymSession } from '../types';
+
+interface Props {
+  session: GymSession;
+}
+
+export default function GymSessionCard({ session }: Props) {
+  const start = session.start_time.slice(0, 5);
+  const label = `${start} · ${session.duration_min} min`;
+
+  return (
+    <View style={styles.card} accessibilityLabel={`Gym session: ${label}${session.notes ? ', ' + session.notes : ''}`}>
+      <Text style={styles.time}>{label}</Text>
+      {session.notes ? <Text style={styles.notes} numberOfLines={1}>{session.notes}</Text> : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: { backgroundColor: '#1a3a38', borderRadius: 8, padding: 8, marginTop: 4 },
+  time: { fontSize: 12, color: '#66fcf1', fontWeight: '600' },
+  notes: { fontSize: 11, color: '#8a8f98', marginTop: 2 },
+});
+```
+
+- [ ] **Step 9: Create `src/components/SuggestionCard.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+
+interface Props {
+  icon: string;
+  title: string;
+  body: string;
+}
+
+export default function SuggestionCard({ icon, title, body }: Props) {
+  return (
+    <View style={styles.card} accessibilityLabel={`AI suggestion: ${title}. ${body}`}>
+      <Text style={styles.icon} accessibilityElementsHidden>{icon}</Text>
+      <View style={styles.textWrap}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.body}>{body}</Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: { backgroundColor: '#111217', borderRadius: 14, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 14, borderWidth: 1, borderColor: '#1e2028' },
+  icon: { fontSize: 26, marginTop: 2 },
+  textWrap: { flex: 1, gap: 4 },
+  title: { fontSize: 14, fontWeight: '600', color: '#eaeaea' },
+  body: { fontSize: 13, color: '#8a8f98', lineHeight: 18 },
+});
+```
+
+Note: `SuggestionCard` receives `icon` as an emoji string from the Gemini Edge Function JSON response — this is data content (like a chart label), not a structural UI icon, so emoji is appropriate here. `accessibilityElementsHidden` hides the raw emoji from screen readers while the full `accessibilityLabel` on the parent provides the readable description.
+
+- [ ] **Step 10: Create `src/components/MessageBubble.tsx`**
+
+```typescript
+import { View, Text, StyleSheet } from 'react-native';
+
+interface Props {
+  content: string;
+  isMine: boolean;
+  createdAt: string;
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+export default function MessageBubble({ content, isMine, createdAt }: Props) {
+  return (
+    <View style={[styles.wrap, isMine ? styles.wrapMine : styles.wrapTheirs]}>
+      <View style={[styles.bubble, isMine ? styles.mine : styles.theirs]} accessibilityLabel={`${isMine ? 'You' : 'Them'}: ${content}`}>
+        <Text style={[styles.text, isMine ? styles.textMine : styles.textTheirs]}>{content}</Text>
+        <Text style={styles.time}>{formatTime(createdAt)}</Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: { paddingHorizontal: 16, marginBottom: 8 },
+  wrapMine: { alignItems: 'flex-end' },
+  wrapTheirs: { alignItems: 'flex-start' },
+  bubble: { maxWidth: '78%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, gap: 4 },
+  mine: { backgroundColor: '#66fcf1', borderBottomRightRadius: 4 },
+  theirs: { backgroundColor: '#111217', borderBottomLeftRadius: 4 },
+  text: { fontSize: 14, lineHeight: 20 },
+  textMine: { color: '#0b0c10' },
+  textTheirs: { color: '#eaeaea' },
+  time: { fontSize: 10, color: 'rgba(0,0,0,0.4)', alignSelf: 'flex-end' },
+});
+```
+
+- [ ] **Step 11: TypeScript check**
+
+```bash
+npx tsc --noEmit 2>&1 | head -20
+```
+
+Expected: 0 errors.
+
+- [ ] **Step 12: Commit**
+
+```bash
+git add src/components/
+git commit -m "feat: shared UI components — VerdictChip, AttendanceBar, ClassCard, FeedCard, WallCard, NoteCard, MealRow, GymSessionCard, SuggestionCard, MessageBubble"
+```
