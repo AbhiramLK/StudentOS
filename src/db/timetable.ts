@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type { TimetableSlot, UserTimetableEntry } from '../types';
 
-export async function getAllSlots(): Promise<TimetableSlot[]> {
+export async function getTimetableSlots(): Promise<TimetableSlot[]> {
   const { data } = await supabase
     .from('timetable_slots').select('*')
     .order('day_of_week').order('slot_number');
