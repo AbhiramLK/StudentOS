@@ -4,7 +4,6 @@ import {
   StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useSubjectsStore } from '../../src/stores/subjectsStore';
 import { upsertAttendance } from '../../src/db/attendance';
@@ -46,13 +45,13 @@ export default function AttendanceScreen() {
     [subjects, records, todayStr],
   );
 
-  async function mark(subjectId: string, status: 'present' | 'absent') {
+  const mark = useCallback(async (subjectId: string, status: 'present' | 'absent') => {
     if (!profile) return;
     setMarking(subjectId + status);
     await upsertAttendance(profile.id, subjectId, todayStr, status);
     await fetch(profile.id);
     setMarking(null);
-  }
+  }, [profile, todayStr, fetch]);
 
   if (loading && subjects.length === 0) {
     return (

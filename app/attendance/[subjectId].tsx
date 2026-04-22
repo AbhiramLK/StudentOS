@@ -25,7 +25,11 @@ export default function SubjectDetailScreen() {
   const { profile } = useAuthStore();
   const { subjects, records, fetch } = useSubjectsStore();
 
-  const subject = subjects.find(s => s.id === subjectId);
+  const subject = useMemo(
+    () => subjects.find(s => s.id === subjectId),
+    [subjects, subjectId],
+  );
+
   const subjectRecords = useMemo(
     () => records
       .filter(r => r.subject_id === subjectId)
@@ -39,27 +43,30 @@ export default function SubjectDetailScreen() {
     }, [profile?.id, fetch]),
   );
 
-  if (!subject) return null;
+  const stats = useMemo(() => {
+    if (!subject) return null;
+    const present = subjectRecords.filter(r => r.status === 'present').length;
+    const total = subjectRecords.length;
+    const pct = computeAttendancePct(present, total);
+    const verdict = verdictForSubject(present, total, subject.target_pct);
+    const skipsLeft = (() => {
+      let n = 0;
+      while (canSkip(present, total + n, subject.target_pct)) n++;
+      return n;
+    })();
+    const needed = classesToRecover(present, total, subject.target_pct);
+    const verdictColor =
+      verdict === 'safe' ? C.accent : verdict === 'warning' ? C.warning : C.danger;
+    return { present, total, pct, verdict, skipsLeft, needed, verdictColor };
+  }, [subject, subjectRecords]);
 
-  const present = subjectRecords.filter(r => r.status === 'present').length;
-  const total = subjectRecords.length;
-  const pct = computeAttendancePct(present, total);
-  const verdict = verdictForSubject(present, total, subject.target_pct);
-  const skipsLeft = (() => {
-    let n = 0;
-    while (canSkip(present, total + n, subject.target_pct)) n++;
-    return n;
-  })();
-  const needed = classesToRecover(present, total, subject.target_pct);
-
-  const verdictColor =
-    verdict === 'safe' ? C.accent : verdict === 'warning' ? C.warning : C.danger;
+  if (!subject || !stats) return null;
 
   async function toggleRecord(date: string, currentStatus: 'present' | 'absent') {
     if (!profile) return;
     const next = currentStatus === 'present' ? 'absent' : 'present';
     await upsertAttendance(profile.id, subject!.id, date, next);
-    fetch(profile.id);
+    await fetch(profile.id);
   }
 
   return (
@@ -73,21 +80,21 @@ export default function SubjectDetailScreen() {
 
       <View style={s.statsRow}>
         <View style={s.statBox}>
-          <Text style={[s.statValue, { color: verdictColor }]}>{pct}%</Text>
+          <Text style={[s.statValue, { color: stats.verdictColor }]}>{stats.pct}%</Text>
           <Text style={s.statLabel}>Attendance</Text>
         </View>
         <View style={s.statBox}>
-          <Text style={s.statValue}>{present}/{total}</Text>
+          <Text style={s.statValue}>{stats.present}/{stats.total}</Text>
           <Text style={s.statLabel}>Present/Total</Text>
         </View>
-        {verdict === 'danger' ? (
+        {stats.verdict === 'danger' ? (
           <View style={s.statBox}>
-            <Text style={[s.statValue, { color: C.danger }]}>{needed}</Text>
+            <Text style={[s.statValue, { color: C.danger }]}>{stats.needed}</Text>
             <Text style={s.statLabel}>Classes needed</Text>
           </View>
         ) : (
           <View style={s.statBox}>
-            <Text style={[s.statValue, { color: C.accent }]}>{skipsLeft}</Text>
+            <Text style={[s.statValue, { color: C.accent }]}>{stats.skipsLeft}</Text>
             <Text style={s.statLabel}>Safe skips</Text>
           </View>
         )}
