@@ -9,7 +9,7 @@ import { computeAttendancePct } from '../../src/engine/predictionEngine';
 import { getMessMenuForDay, computeDayCycle } from '../../src/db/mess';
 import { supabase } from '../../src/lib/supabase';
 import MealRow from '../../src/components/MealRow';
-import type { MessMenu } from '../../src/types';
+import type { MessMenu, Mess } from '../../src/types';
 
 const C = {
   bg: '#0b0c10', card: '#111217', accent: '#66fcf1',
@@ -29,9 +29,8 @@ export default function HomeScreen() {
   const { userEntries, calendarEntries, fetch: fetchTimetable } = useTimetableStore();
   const [messMenus, setMessMenus] = useState<MessMenu[]>([]);
 
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
-  const todayDow = (today.getDay() + 6) % 7; // 0=Mon
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayDow = useMemo(() => (new Date().getDay() + 6) % 7, []);
 
   const calendarEntry = useMemo(
     () => calendarEntries.find(e => e.date === todayStr) ?? null,
@@ -50,7 +49,7 @@ export default function HomeScreen() {
         fetchSubjects(profile.id);
         fetchTimetable(profile.id);
       }
-    }, [profile?.id]),
+    }, [profile?.id, fetchSubjects, fetchTimetable]),
   );
 
   useEffect(() => {
@@ -60,11 +59,12 @@ export default function HomeScreen() {
       .select('*')
       .eq('id', profile.mess_id)
       .single()
-      .then(({ data: mess }) => {
-        if (!mess) return;
+      .then(({ data }) => {
+        if (!data) return;
+        const mess = data as Mess;
         const dayCycle = computeDayCycle(
-          (mess as any).cycle_start_date,
-          (mess as any).cycle_length,
+          mess.cycle_start_date,
+          mess.cycle_length,
         );
         getMessMenuForDay(mess.id, dayCycle).then(setMessMenus);
       });
@@ -167,7 +167,7 @@ export default function HomeScreen() {
 
         {todayEvents.length > 0 && (
           <View style={s.section}>
-            <Text style={s.sectionTitle}>Suggested</Text>
+            <Text style={s.sectionTitle}>Events</Text>
             {todayEvents.map(ev => (
               <Text key={ev.id} style={s.suggestedItem}>{ev.description}</Text>
             ))}
