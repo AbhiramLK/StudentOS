@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator,
 } from 'react-native';
@@ -44,10 +44,13 @@ export default function MessScreen() {
       });
   }, [profile?.mess_id]);
 
-  const meals = MEAL_ORDER.map(meal => ({
-    meal,
-    items: menus.find(m => m.meal === meal)?.items ?? [],
-  }));
+  const meals = useMemo(() =>
+    MEAL_ORDER.map(meal => ({
+      meal,
+      items: menus.find(m => m.meal === meal)?.items ?? [],
+    })),
+    [menus],
+  );
 
   const todayStr = new Date().toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long',

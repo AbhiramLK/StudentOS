@@ -26,14 +26,14 @@ export default function WallScreen() {
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
   const [submitting, setSubmitting] = useState(false);
 
-  async function loadEntries() {
+  const loadEntries = useCallback(async () => {
     setLoading(true);
     const data = await getWallEntries();
     setEntries(data);
     setLoading(false);
-  }
+  }, []);
 
-  useFocusEffect(useCallback(() => { loadEntries(); }, []));
+  useFocusEffect(useCallback(() => { loadEntries(); }, [loadEntries]));
 
   useEffect(() => {
     const channel = supabase

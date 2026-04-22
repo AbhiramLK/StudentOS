@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, Modal,
   TextInput, StyleSheet, ActivityIndicator,
@@ -33,7 +33,7 @@ export default function NotesScreen() {
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
 
-  async function loadNotes() {
+  const loadNotes = useCallback(async () => {
     if (!filterValue.trim()) { setNotes([]); return; }
     setLoading(true);
     const data = filterMode === 'subject'
@@ -41,11 +41,9 @@ export default function NotesScreen() {
       : await getNotesBySemester(filterValue.trim());
     setNotes(data);
     setLoading(false);
-  }
+  }, [filterMode, filterValue]);
 
-  useFocusEffect(useCallback(() => { loadNotes(); }, [filterMode, filterValue]));
-
-  useEffect(() => { loadNotes(); }, [filterMode, filterValue]);
+  useFocusEffect(useCallback(() => { loadNotes(); }, [loadNotes]));
 
   async function handleUpload() {
     if (!uploadTitle.trim() || !uploadSubject.trim() || !uploadSemester.trim()) {
@@ -85,7 +83,7 @@ export default function NotesScreen() {
     loadNotes();
   }
 
-  async function handleDownload(note: Note) {
+  const handleDownload = useCallback(async (note: Note) => {
     setDownloading(note.id);
     try {
       const url = await getSignedUrl(note.file_path);
@@ -99,7 +97,7 @@ export default function NotesScreen() {
       Alert.alert('Download failed', 'Could not open the file.');
     }
     setDownloading(null);
-  }
+  }, []);
 
   return (
     <View style={s.container}>
@@ -135,6 +133,7 @@ export default function NotesScreen() {
           value={filterValue}
           onChangeText={setFilterValue}
           returnKeyType="search"
+          accessibilityLabel={`Search by ${filterMode}`}
         />
       </View>
 
