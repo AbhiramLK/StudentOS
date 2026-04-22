@@ -1,27 +1,42 @@
 import { supabase } from '../lib/supabase';
-import type { GymSession } from '../types';
 
-export async function getGymSessions(userId: string, weekStart: string, weekEnd: string): Promise<GymSession[]> {
-  const { data, error } = await supabase
+export type GymSession = {
+  id: string;
+  user_id: string;
+  scheduled_at: string;
+  done: boolean;
+  notes: string | null;
+  created_at: string;
+};
+
+export async function getGymSessions(userId: string): Promise<GymSession[]> {
+  const { data } = await supabase
     .from('gym_sessions')
     .select('*')
     .eq('user_id', userId)
-    .gte('date', weekStart)
-    .lte('date', weekEnd)
-    .order('date', { ascending: true });
-  if (error) throw error;
-  return data as GymSession[];
+    .order('scheduled_at', { ascending: true });
+  return data ?? [];
 }
 
-export async function logGymSession(
+export async function addGymSession(
   userId: string,
-  date: string,
-  startTime: string,
-  durationMin: number,
-  notes: string | null,
+  scheduledAt: string,
+  notes?: string,
 ): Promise<void> {
-  const { error } = await supabase
+  await supabase.from('gym_sessions').insert({
+    user_id: userId,
+    scheduled_at: scheduledAt,
+    notes: notes ?? null,
+  });
+}
+
+export async function markGymDone(sessionId: string): Promise<void> {
+  await supabase
     .from('gym_sessions')
-    .insert({ user_id: userId, date, start_time: startTime, duration_min: durationMin, notes });
-  if (error) throw error;
+    .update({ done: true })
+    .eq('id', sessionId);
+}
+
+export async function deleteGymSession(sessionId: string): Promise<void> {
+  await supabase.from('gym_sessions').delete().eq('id', sessionId);
 }
