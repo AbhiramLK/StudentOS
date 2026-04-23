@@ -73,13 +73,17 @@ export async function getTodayMenu(messName: string): Promise<TodayMenu | null> 
   };
 }
 
-export async function callMessAdmin(body: {
-  action: 'upsert_cycle';
-  mess_name: string;
-  cycle_length: number;
-  cycle_start_date: string;
-  meals: Array<{ day_number: number; meal_type: string; items: string[] }>;
-}): Promise<void> {
+export async function callMessAdmin(
+  body:
+    | {
+        action: 'upsert_cycle';
+        mess_name: string;
+        cycle_length: number;
+        cycle_start_date: string;
+        meals: Array<{ day_number: number; meal_type: string; items: string[] }>;
+      }
+    | { action: 'deactivate_cycle'; cycle_id: string },
+): Promise<void> {
   const { error } = await supabase.functions.invoke('mess-admin', { body });
   if (error) throw error;
 }
