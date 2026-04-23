@@ -1,84 +1,85 @@
 import { supabase } from '../lib/supabase';
-import type { Conversation, Message } from '../types';
+import type { Conversation, Message, Profile } from '../types';
 
 export async function getConversations(userId: string): Promise<Conversation[]> {
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('conversations')
-    .select('*, user_a_profile:profiles!user_a(id,name), user_b_profile:profiles!user_b(id,name), last_message:messages!last_message_id(content,created_at)')
+    .select('*')
     .or(`user_a.eq.${userId},user_b.eq.${userId}`)
     .order('updated_at', { ascending: false });
-  if (error) throw error;
-  return data as Conversation[];
+  return data ?? [];
 }
 
-export async function getMessages(conversationId: string): Promise<Message[]> {
+export async function getOrCreateConversation(meId: string, otherUserId: string): Promise<string> {
+  const ids = [meId, otherUserId].sort();
+  const a = ids[0];
+  const b = ids[1];
+
+  const { data: existing } = await supabase
+    .from('conversations')
+    .select('id')
+    .eq('user_a', a)
+    .eq('user_b', b)
+    .maybeSingle();
+
+  if (existing) return existing.id as string;
+
   const { data, error } = await supabase
-    .from('messages')
-    .select('*')
-    .or(`sender_id.eq.${conversationId},receiver_id.eq.${conversationId}`)
-    .order('created_at', { ascending: true });
+    .from('conversations')
+    .insert({ user_a: a, user_b: b })
+    .select('id')
+    .single();
   if (error) throw error;
-  return data as Message[];
+  return data.id as string;
 }
 
-export async function getMessagesByConversation(userId: string, otherUserId: string): Promise<Message[]> {
-  const { data, error } = await supabase
-    .from('messages')
-    .select('*')
-    .or(
-      `and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`,
-    )
-    .order('created_at', { ascending: true });
-  if (error) throw error;
-  return data as Message[];
+export async function getMessages(conversationId: string, myId: string): Promise<Message[]> {
+  // Get the other participant from the conversation
+  const { data: conv } = await supabase
+    .from('conversations')
+    .select('user_a, user_b')
+    .eq('id', conversationId)
+    .single();
+  if (!conv) return [];
+
+  const otherId = conv.user_a === myId ? conv.user_b : conv.user_a;
+
+  // Fetch messages between both users (two directions)
+  const [r1, r2] = await Promise.all([
+    supabase.from('messages').select('*').eq('sender_id', myId).eq('receiver_id', otherId),
+    supabase.from('messages').select('*').eq('sender_id', otherId).eq('receiver_id', myId),
+  ]);
+  const all: Message[] = [...(r1.data ?? []), ...(r2.data ?? [])];
+  all.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  return all;
 }
 
-export async function sendMessage(senderId: string, receiverId: string, content: string): Promise<Message> {
+export async function sendMessage(
+  conversationId: string,
+  senderId: string,
+  receiverId: string,
+  content: string,
+): Promise<Message> {
   const { data, error } = await supabase
     .from('messages')
     .insert({ sender_id: senderId, receiver_id: receiverId, content })
     .select()
     .single();
   if (error) throw error;
+
+  await supabase
+    .from('conversations')
+    .update({ last_message_id: data.id, updated_at: new Date().toISOString() })
+    .eq('id', conversationId);
+
   return data as Message;
 }
 
-export async function markMessagesRead(senderId: string, receiverId: string): Promise<void> {
-  const { error } = await supabase
-    .from('messages')
-    .update({ read_at: new Date().toISOString() })
-    .eq('sender_id', senderId)
-    .eq('receiver_id', receiverId)
-    .is('read_at', null);
-  if (error) throw error;
-}
-
-export async function searchProfiles(query: string): Promise<{ id: string; name: string; roll_number: string }[]> {
-  const { data, error } = await supabase
+export async function searchProfiles(query: string): Promise<Profile[]> {
+  const { data } = await supabase
     .from('profiles')
-    .select('id, name, roll_number')
+    .select('id, name, roll_number, email, mess_id, semester_end_date, is_admin')
     .ilike('name', `%${query}%`)
-    .limit(10);
-  if (error) throw error;
-  return data as { id: string; name: string; roll_number: string }[];
-}
-
-export async function getOrCreateConversation(userA: string, userB: string): Promise<string> {
-  const { data: existing, error: fetchError } = await supabase
-    .from('conversations')
-    .select('id')
-    .or(
-      `and(user_a.eq.${userA},user_b.eq.${userB}),and(user_a.eq.${userB},user_b.eq.${userA})`,
-    )
-    .maybeSingle();
-  if (fetchError) throw fetchError;
-  if (existing) return existing.id;
-
-  const { data, error } = await supabase
-    .from('conversations')
-    .insert({ user_a: userA, user_b: userB })
-    .select('id')
-    .single();
-  if (error) throw error;
-  return data.id;
+    .limit(15);
+  return (data ?? []) as Profile[];
 }
