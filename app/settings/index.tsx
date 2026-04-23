@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
-import { router } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/stores/authStore';
 import { supabase } from '../../src/lib/supabase';
@@ -29,9 +29,10 @@ export default function SettingsScreen() {
     setMesses(data ?? []);
   }, []);
 
-  useEffect(() => { loadMesses(); }, [loadMesses]);
+  useFocusEffect(useCallback(() => { loadMesses(); }, [loadMesses]));
 
-  async function handleSave() {
+  const handleSave = useCallback(async () => {
+    if (!profile) return;
     if (!name.trim()) {
       Alert.alert('Invalid input', 'Name is required.');
       return;
@@ -58,9 +59,9 @@ export default function SettingsScreen() {
     }
     setProfile({ ...profile!, ...updates });
     Alert.alert('Saved', 'Your profile has been updated.');
-  }
+  }, [profile, name, rollNumber, messId, semesterEndDate, setProfile]);
 
-  async function handleSignOut() {
+  const handleSignOut = useCallback(() => {
     Alert.alert('Sign out?', 'You will need to verify your email again to sign back in.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -71,7 +72,7 @@ export default function SettingsScreen() {
         },
       },
     ]);
-  }
+  }, [signOut]);
 
   return (
     <View style={s.container}>

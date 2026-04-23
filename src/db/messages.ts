@@ -33,25 +33,15 @@ export async function getOrCreateConversation(meId: string, otherUserId: string)
   return data.id as string;
 }
 
-export async function getMessages(conversationId: string, myId: string): Promise<Message[]> {
-  // Get the other participant from the conversation
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('user_a, user_b')
-    .eq('id', conversationId)
-    .single();
-  if (!conv) return [];
-
-  const otherId = conv.user_a === myId ? conv.user_b : conv.user_a;
-
-  // Fetch messages between both users (two directions)
-  const [r1, r2] = await Promise.all([
-    supabase.from('messages').select('*').eq('sender_id', myId).eq('receiver_id', otherId),
-    supabase.from('messages').select('*').eq('sender_id', otherId).eq('receiver_id', myId),
-  ]);
-  const all: Message[] = [...(r1.data ?? []), ...(r2.data ?? [])];
-  all.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  return all;
+export async function getMessages(myId: string, otherId: string): Promise<Message[]> {
+  const { data } = await supabase
+    .from('messages')
+    .select('*')
+    .or(
+      `and(sender_id.eq.${myId},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${myId})`,
+    )
+    .order('created_at', { ascending: true });
+  return (data ?? []) as Message[];
 }
 
 export async function sendMessage(

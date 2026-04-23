@@ -9,6 +9,7 @@ import { useAuthStore } from '../../src/stores/authStore';
 import {
   getConversations, searchProfiles, getOrCreateConversation,
 } from '../../src/db/messages';
+import { supabase } from '../../src/lib/supabase';
 import type { Conversation, Profile } from '../../src/types';
 
 const C = {
@@ -21,7 +22,7 @@ function fmtTime(iso: string) {
   const d = new Date(iso);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return `${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+    return `${String(d.getHours()).padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   }
   return `${d.getDate()} ${MONTH[d.getMonth()]}`;
 }
@@ -29,6 +30,7 @@ function fmtTime(iso: string) {
 export default function InboxScreen() {
   const { profile } = useAuthStore();
   const [convos, setConvos] = useState<Conversation[]>([]);
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState('');
@@ -41,20 +43,38 @@ export default function InboxScreen() {
     setLoading(true);
     const data = await getConversations(profile.id);
     setConvos(data);
+
+    // Batch-fetch names for all other participants
+    const otherIds = data.map(c => c.user_a === profile.id ? c.user_b : c.user_a);
+    const uniqueIds = [...new Set(otherIds)];
+    if (uniqueIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .in('id', uniqueIds);
+      if (profiles) {
+        const map: Record<string, string> = {};
+        for (const p of profiles) {
+          map[p.id] = p.name;
+        }
+        setNameMap(map);
+      }
+    }
+
     setLoading(false);
   }, [profile]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  async function handleSearch(text: string) {
+  const handleSearch = useCallback(async (text: string) => {
     setQuery(text);
     if (!text.trim()) { setResults([]); return; }
     setSearching(true);
     setResults(await searchProfiles(text.trim()));
     setSearching(false);
-  }
+  }, []);
 
-  async function openConversation(otherUserId: string) {
+  const openConversation = useCallback(async (otherUserId: string) => {
     if (!profile) return;
     setOpening(otherUserId);
     try {
@@ -67,7 +87,7 @@ export default function InboxScreen() {
       // ignore
     }
     setOpening(null);
-  }
+  }, [profile]);
 
   function otherParticipantId(conv: Conversation): string {
     return conv.user_a === profile?.id ? conv.user_b : conv.user_a;
@@ -88,25 +108,27 @@ export default function InboxScreen() {
         contentContainerStyle={s.list}
         refreshing={loading}
         onRefresh={load}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={s.convoRow}
-            onPress={() => router.push(`/messages/${item.id}` as any)}
-            accessibilityLabel="Open conversation"
-          >
-            <View style={s.avatar}>
-              <Ionicons name="person-outline" size={20} color={C.muted} />
-            </View>
-            <View style={s.convoInfo}>
-              <Text style={s.convoName} numberOfLines={1}>
-                {otherParticipantId(item)}
-              </Text>
-              <Text style={s.convoLast} numberOfLines={1}>
-                {item.updated_at ? fmtTime(item.updated_at) : ''}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
+        renderItem={({ item }) => {
+          const otherId = otherParticipantId(item);
+          const displayName = nameMap[otherId] ?? otherId;
+          return (
+            <TouchableOpacity
+              style={s.convoRow}
+              onPress={() => router.push(`/messages/${item.id}` as any)}
+              accessibilityLabel={`Open conversation with ${displayName}`}
+            >
+              <View style={s.avatar}>
+                <Ionicons name="person-outline" size={20} color={C.muted} />
+              </View>
+              <View style={s.convoInfo}>
+                <Text style={s.convoName} numberOfLines={1}>{displayName}</Text>
+                <Text style={s.convoLast} numberOfLines={1}>
+                  {item.updated_at ? fmtTime(item.updated_at) : ''}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
         ListEmptyComponent={
           loading ? null : (
             <Text style={s.emptyText}>No conversations yet. Tap + to message someone.</Text>
@@ -142,7 +164,7 @@ export default function InboxScreen() {
             <FlatList
               data={results}
               keyExtractor={p => p.id}
-              style={{ maxHeight: 300 }}
+              style={s.resultList}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={s.resultRow}
@@ -210,6 +232,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, marginBottom: 12,
   },
   searchInput: { flex: 1, paddingVertical: 12, color: C.text, fontSize: 14 },
+  resultList: { maxHeight: 300 },
   resultRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1a1b20',

@@ -24,22 +24,26 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList>(null);
 
+  // Fetch receiver once on mount — does NOT belong in `load`
+  useEffect(() => {
+    if (!profile || !conversationId) return;
+    supabase
+      .from('conversations')
+      .select('user_a, user_b')
+      .eq('id', conversationId)
+      .single()
+      .then(({ data: conv }) => {
+        if (conv) {
+          setReceiverId(conv.user_a === profile.id ? conv.user_b : conv.user_a);
+        }
+      });
+  }, [conversationId, profile]);
+
   const load = useCallback(async () => {
-    if (!profile) return;
-    const data = await getMessages(conversationId, profile.id);
+    if (!profile || !receiverId) return;
+    const data = await getMessages(profile.id, receiverId);
     setMessages(data);
-    // Derive receiver from conversation (first message or conversation row)
-    if (!receiverId) {
-      const { data: conv } = await supabase
-        .from('conversations')
-        .select('user_a, user_b')
-        .eq('id', conversationId)
-        .single();
-      if (conv) {
-        setReceiverId(conv.user_a === profile.id ? conv.user_b : conv.user_a);
-      }
-    }
-  }, [conversationId, profile, receiverId]);
+  }, [profile, receiverId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
