@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../src/stores/authStore';
-import { getAllSlots, upsertUserTimetableEntry } from '../../src/db/timetable';
+import { getTimetableSlots, upsertUserTimetableEntry } from '../../src/db/timetable';
 import type { TimetableSlot } from '../../src/types';
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -17,7 +17,7 @@ export default function OnboardingTimetable() {
   const [editingSlot, setEditingSlot] = useState<TimetableSlot | null>(null);
   const [inputValue, setInputValue] = useState('');
 
-  useEffect(() => { getAllSlots().then(setSlots); }, []);
+  useEffect(() => { getTimetableSlots().then(setSlots); }, []);
 
   const sections = DAY_NAMES
     .map((day, i) => ({ title: day, data: slots.filter((s) => s.day_of_week === i) }))

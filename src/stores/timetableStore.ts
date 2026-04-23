@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { TimetableSlot, UserTimetableEntry, AcademicCalendarEntry } from '../types';
-import { getAllSlots, getUserTimetable } from '../db/timetable';
+import { getTimetableSlots, getUserTimetable } from '../db/timetable';
 import { getCalendarEntries } from '../db/calendar';
 
 interface TimetableState {
@@ -20,7 +20,7 @@ export const useTimetableStore = create<TimetableState>((set) => ({
   fetch: async (userId) => {
     set({ loading: true });
     const [slots, userEntries, calendarEntries] = await Promise.all([
-      getAllSlots(),
+      getTimetableSlots(),
       getUserTimetable(userId),
       getCalendarEntries(),
     ]);
