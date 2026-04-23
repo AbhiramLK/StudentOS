@@ -24,6 +24,7 @@ export default function LoginScreen() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email: email.toLowerCase(),
+      options: { emailRedirectTo: 'studentos://login-callback' },
     });
     setLoading(false);
     if (error) { Alert.alert('Error', error.message); return; }
