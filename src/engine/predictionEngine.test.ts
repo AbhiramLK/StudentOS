@@ -53,4 +53,36 @@ describe('verdictForSubject', () => {
   it('returns danger when below target', () => {
     expect(verdictForSubject(70, 100, 75)).toBe('danger');
   });
+  it('returns danger when no classes attended yet', () => {
+    expect(verdictForSubject(0, 0, 75)).toBe('danger');
+  });
+  it('returns warning at exactly target pct (can no longer skip)', () => {
+    expect(verdictForSubject(75, 100, 75)).toBe('warning');
+  });
+  it('returns safe at exactly 5% above target', () => {
+    expect(verdictForSubject(80, 100, 75)).toBe('safe');
+  });
+});
+
+describe('classesToRecover edge cases', () => {
+  it('returns 0 when already at exact target', () => {
+    expect(classesToRecover(75, 100, 75)).toBe(0);
+  });
+  it('returns 1 when one class restores target from 0/0', () => {
+    expect(classesToRecover(0, 0, 75)).toBe(1);
+  });
+  it('returns correct count when deeply below target', () => {
+    // 50/100 = 50%; need to reach 75% with all present
+    // (50+n)/(100+n) >= 0.75 → 50+n >= 75+0.75n → 0.25n >= 25 → n >= 100
+    expect(classesToRecover(50, 100, 75)).toBe(100);
+  });
+});
+
+describe('canSkip edge cases', () => {
+  it('allows skipping when target is 0', () => {
+    expect(canSkip(0, 0, 0)).toBe(true);
+  });
+  it('disallows skipping when at 100% target', () => {
+    expect(canSkip(100, 100, 100)).toBe(false);
+  });
 });

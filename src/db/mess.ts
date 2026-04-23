@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { Mess, MessMenu } from '../types';
+import { computeDayCycle as _computeDayCycle } from '../utils/cycleUtils';
 
 export async function getMesses(): Promise<Mess[]> {
   const { data, error } = await supabase.from('messes').select('*').order('name');
@@ -18,14 +19,7 @@ export async function getMessMenuForDay(messId: string, dayCycle: number): Promi
   return data as MessMenu[];
 }
 
-export function computeDayCycle(cycleStartDate: string, cycleLength: number): number {
-  const start = new Date(cycleStartDate);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  start.setHours(0, 0, 0, 0);
-  const diffDays = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  return (diffDays % cycleLength) + 1;
-}
+export { computeDayCycle } from '../utils/cycleUtils';
 
 export type MessMeal = {
   meal_type: 'breakfast' | 'lunch' | 'snacks' | 'dinner';
@@ -38,15 +32,6 @@ export type TodayMenu = {
   meals: MessMeal[];
 };
 
-function cycleDayNumber(cycleStartDate: string, cycleLength: number): number {
-  const start = new Date(cycleStartDate);
-  const today = new Date();
-  start.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  return (((diff % cycleLength) + cycleLength) % cycleLength) + 1;
-}
-
 export async function getTodayMenu(messName: string): Promise<TodayMenu | null> {
   const { data: cycle } = await supabase
     .from('mess_cycles')
@@ -57,7 +42,7 @@ export async function getTodayMenu(messName: string): Promise<TodayMenu | null> 
 
   if (!cycle) return null;
 
-  const dayNumber = cycleDayNumber(cycle.cycle_start_date as string, cycle.cycle_length as number);
+  const dayNumber = _computeDayCycle(cycle.cycle_start_date as string, cycle.cycle_length as number);
 
   const { data: meals } = await supabase
     .from('mess_meals')
