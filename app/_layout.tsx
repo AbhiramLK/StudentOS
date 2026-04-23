@@ -3,9 +3,11 @@ import { Stack, router } from 'expo-router';
 import { supabase } from '../src/lib/supabase';
 import { useAuthStore } from '../src/stores/authStore';
 import { getProfile } from '../src/db/profiles';
+import { useNotifications } from '../src/hooks/useNotifications';
 
 export default function RootLayout() {
   const { setSession, setProfile } = useAuthStore();
+  useNotifications();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
